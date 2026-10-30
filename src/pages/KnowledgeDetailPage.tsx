@@ -73,7 +73,7 @@ function FilesView({ kb, onChanged }: { kb: ApiKnowledgeBase; onChanged: () => v
   const [jobs, setJobs] = useState<ApiImportJob[]>([]);
   const [filter, setFilter] = useState<'all' | 'ready' | 'active' | 'failed'>('all');
   const [q, setQ] = useState('');
-  const [rechunk, setRechunk] = useState<{ file: ApiKnowledgeFile; config: ApiChunkConfig } | null>(null);
+  const [rechunk, setRechunk] = useState<{ file: ApiKnowledgeFile; config: ApiChunkConfig; discardEdits?: boolean } | null>(null);
   const [removing, setRemoving] = useState<ApiKnowledgeFile | null>(null);
   const [meta, setMeta] = useState<ApiKnowledgeFile | null>(null);
   const [busy, setBusy] = useState('');
@@ -114,10 +114,10 @@ function FilesView({ kb, onChanged }: { kb: ApiKnowledgeBase; onChanged: () => v
     return true;
   });
 
-  const retry = async (file: ApiKnowledgeFile, config?: ApiChunkConfig): Promise<boolean> => {
+  const retry = async (file: ApiKnowledgeFile, config?: ApiChunkConfig, discardEdits = false): Promise<boolean> => {
     setBusy(file.id);
     try {
-      await apiFetch(`/knowledge-bases/${kb.id}/files/${file.id}/retry`, { method: 'POST', body: JSON.stringify(config ? { chunk_config: config } : {}) });
+      await apiFetch(`/knowledge-bases/${kb.id}/files/${file.id}/retry`, { method: 'POST', body: JSON.stringify(config ? { chunk_config: config, discard_manual_edits: discardEdits } : {}) });
       toast(config ? `已按「${METHOD_LABEL[config.method]}」重新切块` : '已重新处理');
       await load();
       onChanged();
@@ -186,9 +186,13 @@ function FilesView({ kb, onChanged }: { kb: ApiKnowledgeBase; onChanged: () => v
       ) : files?.length ? <Empty title="没有符合条件的文件" /> : null}
 
       <Modal open={!!rechunk} wide title={`重新切块：${rechunk?.file.filename ?? ''}`} onClose={() => setRechunk(null)}
-        footer={<><button className="btn" onClick={() => setRechunk(null)}>取消</button><button className="btn primary" disabled={!!rechunkProblem || busy === rechunk?.file.id} onClick={async () => { if (rechunk && await retry(rechunk.file, rechunk.config)) setRechunk(null); }}>确认重新切块</button></>}>
+        footer={<><button className="btn" onClick={() => setRechunk(null)}>取消</button><button className="btn primary" disabled={!!rechunkProblem || busy === rechunk?.file.id} onClick={async () => { if (rechunk && await retry(rechunk.file, rechunk.config, rechunk.discardEdits)) setRechunk(null); }}>确认重新切块</button></>}>
         {rechunk ? <>
-          <p className="muted" style={{ marginBottom: 12 }}>会重新解析该文件并替换它的全部分块与向量；人工编辑过的元数据会保留。</p>
+          <p className="muted" style={{ marginBottom: 8 }}>会重新解析该文件并替换它的分块与向量；人工编辑过的元数据会保留。</p>
+          <label className="row" style={{ gap: 8, marginBottom: 12, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!rechunk.discardEdits} onChange={(event) => setRechunk({ ...rechunk, discardEdits: !event.target.checked })} />
+            <span>保留人工编辑过的分块<span className="faint">（顶替新切块中对应的位置，找不到对应位置的放在末尾）</span></span>
+          </label>
           <MethodPicker kb={kb} value={rechunk.config.method} recommended={recommendedMethod(rechunk.file.filename).method} onChange={(method) => setRechunk({ ...rechunk, config: { ...rechunk.config, method } })} />
           <div style={{ marginTop: 16 }}><ChunkConfigFields kb={kb} config={rechunk.config} patch={(patch) => setRechunk({ ...rechunk, config: { ...rechunk.config, ...patch } })} /></div>
           {rechunkProblem ? <Notice tone="error">{rechunkProblem}</Notice> : null}
@@ -295,7 +299,7 @@ function ChunksView({ kb }: { kb: ApiKnowledgeBase }) {
       <div className="grid c2" style={{ gap: 12 }}>
         {list.map((chunk) => (
           <button key={chunk.id} className="chunk-card" style={{ textAlign: 'left', cursor: 'pointer' }} onClick={() => { setEditing(chunk); setDraft({ title: chunk.title, content: chunk.content, keywords: keywordsOf(chunk).join('、'), qa_pairs: qaOf(chunk) }); }}>
-            <header><span className="idx">#{chunk.ordinal}</span><span className="ellipsis grow">{chunk.title}</span>{chunk.page_number ? <span>第 {chunk.page_number} 页</span> : null}<span>{chunk.char_count} 字</span>{chunk.indexed ? null : <Tag tone="orange">未向量化</Tag>}</header>
+            <header><span className="idx">#{chunk.ordinal}</span><span className="ellipsis grow">{chunk.title}</span>{chunk.page_number ? <span>第 {chunk.page_number} 页</span> : null}<span>{chunk.char_count} 字</span>{chunk.metadata_json.manual_edit ? <Tag tone="green">人工编辑</Tag> : null}{chunk.indexed ? null : <Tag tone="orange">未向量化</Tag>}</header>
             <div className="body clamp-3">{chunk.content}</div>
             {keywordsOf(chunk).length ? <div className="row wrap" style={{ gap: 4, marginTop: 6 }}>{keywordsOf(chunk).map((word) => <Tag key={word}>{word}</Tag>)}</div> : null}
             {qaOf(chunk).length ? <div className="faint" style={{ marginTop: 6 }}>问答对 {qaOf(chunk).length} 组 · {qaOf(chunk)[0].q}{qaOf(chunk).length > 1 ? ' …' : ''}</div> : null}
