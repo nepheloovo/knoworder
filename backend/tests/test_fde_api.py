@@ -305,3 +305,29 @@ async def test_invalid_manifest_is_a_422_with_issues(client: AsyncClient) -> Non
     detail = created.json()["detail"]
     assert detail["message"] == "应用配置不符合协议"
     assert {"name", "template_key", "system_prompt"} <= {issue["path"] for issue in detail["issues"]}
+
+
+async def test_workbench_shows_month_stats_and_my_recent_conversations(client: AsyncClient, db_session) -> None:
+    from app.models import DEFAULT_WORKSPACE_ID, Membership, User
+    from app.security import hash_password
+    from tests.test_observability import content_app, priced_mock_llm
+
+    app_id = await content_app(client, await priced_mock_llm(client))
+    assert (await client.post(f"/api/v1/fde/apps/{app_id}/versions", headers=ADMIN)).status_code == 201
+    assert (await client.post(f"/api/v1/fde/apps/{app_id}/publish", headers=ADMIN, json={})).status_code == 200
+    user = User(email="wb@example.com", display_name="业务", password_hash=hash_password("wb-password-1"))
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(Membership(workspace_id=DEFAULT_WORKSPACE_ID, user_id=user.id, role="user"))
+    await db_session.commit()
+    token = (await client.post("/api/v1/auth/login", json={"email": "wb@example.com", "password": "wb-password-1"})).json()["token"]
+    biz = {"Authorization": f"Bearer {token}"}
+
+    await client.post(f"/api/v1/fde/apps/{app_id}/preview", headers=ADMIN, json={"input_values": content_inputs()})  # 调试不计入
+    ran = await client.post(f"/api/v1/fde/apps/{app_id}/run", headers=biz, json={"input_values": content_inputs()})
+    assert ran.status_code == 200, ran.text
+
+    body = (await client.get("/api/v1/fde/workbench", headers=biz)).json()
+    assert body["month"] == {"runs": 1, "users": 1, "apps": 1, "new_chunks": 0}
+    assert [item["conversation_id"] for item in body["recent"]] == [ran.json()["conversation_id"]]
+    assert (await client.get("/api/v1/fde/workbench", headers=ADMIN)).json()["recent"] == []  # 只看自己的对话

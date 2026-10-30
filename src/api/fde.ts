@@ -83,12 +83,17 @@ export type RunResult = {
 };
 export type EvaluationCase = { id?: string; name: string; message: string; input_values: Record<string, unknown>; expected_keywords: string[]; forbidden_keywords: string[]; require_citations: boolean };
 export type EvaluationResult = { case_id: string; name: string; passed: boolean; reasons: string[]; output: string; simulated?: boolean };
+export type WorkbenchSummary = {
+  month: { runs: number; users: number; apps: number; new_chunks: number };
+  recent: Array<{ conversation_id: string; title: string; app_id: string; app_name: string; template_key: string; updated_at: string }>;
+};
 export type AppShare = { id: string; name: string; token?: string; expires_at: string | null; max_uses: number | null; use_count: number; is_enabled: boolean; created_at: string };
 
 export const fdeApi = {
   templates: () => apiFetch<AppTemplate[]>('/fde/templates'),
   capabilities: () => apiFetch<Record<string, unknown>>('/fde/capabilities'),
   list: () => apiFetch<FDEApp[]>('/fde/apps'),
+  workbench: () => apiFetch<WorkbenchSummary>('/fde/workbench'),
   design: (payload: { brief: string; template_key: string; llm_model_id?: string | null; base_manifest?: AppManifest }) => apiFetch<{ manifest: AppManifest; simulated: boolean; issues: ValidationIssue[] }>('/fde/design', { method: 'POST', body: JSON.stringify(payload) }),
   create: (manifest: AppManifest) => apiFetch<FDEApp>('/fde/apps', { method: 'POST', body: JSON.stringify({ manifest }) }),
   get: (id: string) => apiFetch<FDEApp>(`/fde/apps/${id}`),
