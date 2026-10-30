@@ -107,10 +107,10 @@ code, .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12p
 
 /* ---------- Page scaffolding ---------- */
 .page { flex: 1; overflow: auto; padding: 24px 32px 40px; }
-.page-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px 16px; margin-bottom: 20px; }
 .page-head h1 { font-size: 20px; font-weight: 600; }
 .page-head p { color: var(--text-3); margin-top: 4px; }
-.page-head .grow { flex: 1; }
+.page-head .grow { flex: 1; min-width: 220px; }
 .section-title { font-size: 15px; font-weight: 600; margin: 24px 0 12px; display: flex; align-items: center; gap: 8px; }
 .section-title small { font-weight: 400; color: var(--text-4); font-size: 12px; }
 .row { display: flex; align-items: center; gap: 8px; }

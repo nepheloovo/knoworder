@@ -1,7 +1,7 @@
-import { Activity, CheckCircle2, ClipboardCheck, Pencil, Play, Plus, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, XCircle } from 'lucide-react';
+import { Activity, CheckCircle2, ClipboardCheck, Gavel, Pencil, Play, Plus, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { errorMessage, type ApiEvaluationCase, type ApiEvaluationRun, type ApiEvaluationSet } from '../api/client';
+import { apiFetch, errorMessage, type ApiEvaluationCase, type ApiEvaluationRun, type ApiEvaluationSet, type ApiModelConfig } from '../api/client';
 import { evalApi, runWithProgress, splitList, type CaseDraft } from '../api/evaluation';
 import { fdeApi, type FDEApp } from '../api/fde';
 import { CHANNEL_LABEL } from '../api/observability';
@@ -101,6 +101,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
   const [editing, setEditing] = useState<ApiEvaluationCase | null>(null);
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [judging, setJudging] = useState(false);
   const [meta, setMeta] = useState({ name: set.name, description: set.description });
   const [filter, setFilter] = useState<'all' | 'needs_standard' | 'failed'>('all');
   const cases = set.cases ?? [];
@@ -141,6 +142,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
           <p>绑定应用 <Link to={`/apps/${set.app_id}?tab=eval`}>{set.app_name}</Link>{set.description ? ` · ${set.description}` : ''}</p>
         </div>
         <label className="row faint" style={{ fontSize: 13 }}>发布门禁<Switch on={set.is_release_gate} label="发布门禁" onChange={async (value) => { try { await evalApi.update(set.id, { is_release_gate: value }); toast(value ? '已设为发布门禁：最近一次评测全部通过才能发布' : '已取消门禁'); await onChanged(); } catch (caught) { toast(errorMessage(caught), 'error'); } }} /></label>
+        <button className="btn" title={set.judge.model_id ? `及格线 ${set.judge.pass_score} 分` : '只按关键词、引用等规则判定'} onClick={() => setJudging(true)}><Gavel size={15} />{set.judge.model_id ? 'LLM 评委已开启' : 'LLM 评委'}</button>
         <button className="btn" onClick={() => setAdding(true)}><Plus size={15} />新增 Case</button>
         <button className="btn primary" disabled={running || !set.ready_count} title={!set.ready_count ? '没有可运行的 Case' : set.needs_standard_count ? `${set.needs_standard_count} 条待补标准的 Case 不参与本次运行` : undefined} onClick={() => void run()}>{running ? <Spinner /> : <Play size={15} />}{running ? (progress ? `运行中 ${progress.done}/${progress.total}` : '运行中') : interrupted ? '重新运行' : '运行评测'}</button>
       </div>
@@ -182,7 +184,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
                 <td style={{ maxWidth: 340 }}><div className="ellipsis" style={{ fontWeight: 500 }}>{item.name}</div><div className="faint ellipsis">{item.message}</div>{item.tags.length ? <div className="row wrap" style={{ gap: 4, marginTop: 4 }}>{item.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div> : null}</td>
                 <td className="faint" style={{ maxWidth: 260 }}>{rules.length ? rules.join(' · ') : '—'}</td>
                 <td>{item.readiness === 'ready' ? <Tag tone="green">可运行</Tag> : <Tag tone="orange">待补标准</Tag>}</td>
-                <td>{result ? (result.passed ? <Tag tone="green"><CheckCircle2 size={12} />通过</Tag> : <div><Tag tone="red"><XCircle size={12} />未通过</Tag><div className="faint clamp-2" style={{ maxWidth: 220 }}>{result.reasons.join('；')}</div></div>) : <span className="faint">—</span>}</td>
+                <td>{result ? (result.passed ? <Tag tone="green"><CheckCircle2 size={12} />通过</Tag> : <div><Tag tone="red"><XCircle size={12} />未通过</Tag><div className="faint clamp-2" style={{ maxWidth: 220 }}>{result.reasons.join('；')}</div></div>) : <span className="faint">—</span>}{result?.judge_score != null ? <div style={{ marginTop: 4 }} title={result.judge_reason}><Tag tone={result.judge_score >= set.judge.pass_score ? 'green' : 'orange'}><Gavel size={11} />评委 {result.judge_score} 分</Tag></div> : null}</td>
               </tr>
             );
           })}</tbody>
@@ -191,6 +193,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
 
       <CaseDrawer set={set} value={editing} result={editing ? results[editing.id] : undefined} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await onChanged(); }} />
       <CaseModal open={adding} onClose={() => setAdding(false)} onSubmit={async (draft) => { await evalApi.createCase(set.id, draft); toast('Case 已新增'); setAdding(false); await onChanged(); }} />
+      <JudgeModal open={judging} set={set} onClose={() => setJudging(false)} onSaved={async () => { setJudging(false); await onChanged(); }} />
       <Modal open={renaming} title="编辑评测集" onClose={() => setRenaming(false)} footer={<><button className="btn" onClick={() => setRenaming(false)}>取消</button><button className="btn primary" disabled={!meta.name.trim()} onClick={async () => { try { await evalApi.update(set.id, meta); setRenaming(false); await onChanged(); } catch (caught) { toast(errorMessage(caught), 'error'); } }}>保存</button></>}>
         <Field label="名称" required><input className="input" value={meta.name} onChange={(event) => setMeta({ ...meta, name: event.target.value })} /></Field>
         <Field label="说明"><textarea className="textarea" value={meta.description} onChange={(event) => setMeta({ ...meta, description: event.target.value })} /></Field>
@@ -231,7 +234,7 @@ function CaseDrawer({ set, value, result, onClose, onSaved }: { set: ApiEvaluati
   return (
     <Drawer open wide title={`${CASE_TYPE[value.case_type].label} Case`} onClose={onClose}
       footer={<><button className="btn danger" onClick={() => setRemoving(true)}><Trash2 size={14} />删除</button><span className="grow" /><button className="btn" onClick={onClose}>取消</button><button className="btn primary" disabled={busy || !draft.message.trim()} onClick={() => void save()}>{busy ? <Spinner /> : null}保存</button></>}>
-      {result ? <div style={{ marginBottom: 14 }}><Notice tone={result.passed ? 'success' : 'error'} title={result.passed ? '最近一次评测通过' : '最近一次评测未通过'}>{result.reasons.join('；')}</Notice>{result.output ? <div className="json-view" style={{ marginTop: 8 }}>{result.output}</div> : null}</div> : null}
+      {result ? <div style={{ marginBottom: 14 }}><Notice tone={result.passed ? 'success' : 'error'} title={result.passed ? '最近一次评测通过' : '最近一次评测未通过'}>{result.reasons.join('；')}{result.judge_reason ? <div style={{ marginTop: result.reasons.length ? 6 : 0 }}>评委{result.judge_score != null ? ` ${result.judge_score} 分` : ''}：{result.judge_reason}</div> : null}</Notice>{result.output ? <div className="json-view" style={{ marginTop: 8 }}>{result.output}</div> : null}</div> : null}
       <Field label="名称" required><input className="input" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
       <Field label="用户输入" required><textarea className="textarea" value={draft.message} onChange={(event) => setDraft({ ...draft, message: event.target.value })} /></Field>
       {Object.keys(value.input_values).length ? <Field label="业务输入"><div className="json-view">{JSON.stringify(value.input_values, null, 2)}</div></Field> : null}
@@ -274,6 +277,53 @@ function CaseModal({ open, onClose, onSubmit }: { open: boolean; onClose: () => 
       <StandardFields draft={draft} setDraft={(patch) => setDraft({ ...draft, ...patch })} caseType="manual" />
       <Field label="标签" hint="逗号分隔"><input className="input" value={draft.tags} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} /></Field>
       {!hasStandard ? <Notice tone="warn">未填写任何判定标准时，该 Case 为「待补标准」，不能参与评测。</Notice> : null}
+    </Modal>
+  );
+}
+
+/** LLM 评委：在规则判定之外按评分细则打 1–5 分，低于及格线判为不通过 */
+function JudgeModal({ open, set, onClose, onSaved }: { open: boolean; set: ApiEvaluationSet; onClose: () => void; onSaved: () => Promise<void> }) {
+  const toast = useToast();
+  const [models, setModels] = useState<ApiModelConfig[] | null>(null);
+  const [draft, setDraft] = useState(set.judge);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setDraft(set.judge);
+    apiFetch<ApiModelConfig[]>('/models').then((list) => setModels(list.filter((item) => item.model_type === 'llm' && item.is_enabled))).catch((caught) => toast(errorMessage(caught), 'error'));
+  }, [open, set.judge, toast]);
+  const save = async (judge: typeof draft) => {
+    setSaving(true);
+    try {
+      await evalApi.update(set.id, { judge });
+      toast(judge.model_id ? 'LLM 评委已开启，下次运行评测生效' : '已关闭 LLM 评委');
+      await onSaved();
+    } catch (caught) {
+      toast(errorMessage(caught), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal open={open} wide title="LLM 评委" icon={<Gavel size={18} />} onClose={onClose}
+      footer={<>{set.judge.model_id ? <button className="btn ghost" disabled={saving} onClick={() => void save({ ...draft, model_id: null })}>关闭评委</button> : null}<span className="grow" /><button className="btn" onClick={onClose}>取消</button><button className="btn primary" disabled={saving || !draft.model_id} onClick={() => void save(draft)}>{saving ? <Spinner /> : null}保存</button></>}>
+      <p className="muted" style={{ marginBottom: 12 }}>关键词规则判不了「回答好不好」。开启后每条 Case 运行完会再让评委模型按评分细则打 1–5 分：低于及格线、或评委调用失败，都判为不通过。配了评委时，标准答案只作对照，不再要求逐字一致。</p>
+      {!models ? <Loading /> : <>
+        <Field label="评委模型" required hint="建议与被测应用用不同的模型，避免自己给自己打高分">
+          <select className="select" value={draft.model_id ?? ''} onChange={(event) => setDraft({ ...draft, model_id: event.target.value || null })}>
+            <option value="">选择对话模型</option>
+            {models.map((model) => <option key={model.id} value={model.id}>{model.display_name}{model.provider === 'mock' ? '（测试替身）' : ''}</option>)}
+          </select>
+        </Field>
+        {!models.length ? <Notice tone="warn" title="还没有可用的对话模型">请先在「集成 → 模型」中添加。</Notice> : null}
+        {models.find((model) => model.id === draft.model_id && model.provider === 'mock' && !model.config.response_text) ? <div style={{ marginBottom: 12 }}><Notice tone="warn" title="测试替身不会真正打分">它只返回固定文案，评委无法解析，开启后每条 Case 都会判为不通过。请选择真实的对话模型。</Notice></div> : null}
+        <Field label="评分细则" hint="留空使用默认细则">
+          <textarea className="textarea" style={{ minHeight: 120 }} placeholder={set.default_rubric} value={draft.rubric} onChange={(event) => setDraft({ ...draft, rubric: event.target.value })} />
+        </Field>
+        <Field label="及格线" hint="1–5 分，评分不低于它才算通过">
+          <input className="input" type="number" min={1} max={5} step={0.5} style={{ width: 120 }} value={draft.pass_score} onChange={(event) => setDraft({ ...draft, pass_score: Math.min(5, Math.max(1, Number(event.target.value) || 4)) })} />
+        </Field>
+      </>}
     </Modal>
   );
 }

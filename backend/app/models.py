@@ -389,6 +389,8 @@ class EvaluationSuite(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(180), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     is_release_gate: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # LLM 评委：{"model_id", "rubric", "pass_score"}；model_id 为空表示只按规则判定
+    judge_config: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
     cases: Mapped[list[EvaluationCase]] = relationship(back_populates="suite", cascade="all, delete-orphan")
 

@@ -380,6 +380,9 @@ export interface ApiEvaluationRun {
     reasons: string[];
     output: string;
     simulated: boolean;
+    /** 配置了 LLM 评委时的 1–5 分与理由；评委调用失败时分数为 null。 */
+    judge_score?: number | null;
+    judge_reason?: string;
   }>;
   created_at: string;
 }
@@ -416,6 +419,12 @@ export interface ApiEvaluationCase {
   updated_at: string;
 }
 
+export interface ApiJudgeConfig {
+  model_id: string | null;
+  rubric: string;
+  pass_score: number;
+}
+
 export interface ApiEvaluationSet {
   id: string;
   app_id: string;
@@ -423,6 +432,8 @@ export interface ApiEvaluationSet {
   name: string;
   description: string;
   is_release_gate: boolean;
+  judge: ApiJudgeConfig;
+  default_rubric: string;
   case_count: number;
   ready_count: number;
   needs_standard_count: number;

@@ -13,7 +13,9 @@ from ...db import get_session
 from ...fde import Manifest, manifest_fingerprint, manifest_from_qa_app
 from ...fde.runtime import execute_manifest
 from ...providers import build_gateway
+from ...providers.base import ModelGateway
 from ...services.eval_design import DESIGN_RULES, MAX_CASES, default_rule_keys, design_cases, template_cases
+from ...services.eval_judge import DEFAULT_PASS_SCORE, DEFAULT_RUBRIC, judge_output
 from ...models import (
     AppVersion,
     AuditEvent,
@@ -23,6 +25,7 @@ from ...models import (
     EvaluationSuite,
     Message,
     ModelConfig,
+    ModelType,
     ProviderName,
     QAApp,
     QueryLog,
@@ -49,10 +52,17 @@ class EvaluationDesignRequest(BaseModel):
     count: int = Field(default=10, ge=1, le=MAX_CASES)
 
 
+class JudgeConfig(BaseModel):
+    model_id: str | None = Field(default=None, max_length=36)
+    rubric: str = Field(default="", max_length=4000)
+    pass_score: float = Field(default=DEFAULT_PASS_SCORE, ge=1, le=5)
+
+
 class EvaluationSetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = Field(default=None, max_length=4000)
     is_release_gate: bool | None = None
+    judge: JudgeConfig | None = None
 
 
 class EvaluationCaseCreate(BaseModel):
@@ -174,6 +184,8 @@ async def _set_payload(session: AsyncSession, suite: EvaluationSuite, app: QAApp
         "name": suite.name,
         "description": suite.description,
         "is_release_gate": suite.is_release_gate,
+        "judge": {"model_id": None, "rubric": "", "pass_score": DEFAULT_PASS_SCORE, **(suite.judge_config or {})},
+        "default_rubric": DEFAULT_RUBRIC,
         "case_count": case_count,
         "ready_count": ready_count,
         "needs_standard_count": case_count - ready_count,
@@ -436,6 +448,13 @@ async def update_evaluation_set(
 ) -> dict[str, Any]:
     suite, app = await _suite(session, suite_id, context.workspace_id, with_cases=True)
     changes = payload.model_dump(exclude_unset=True)
+    changes.pop("judge", None)
+    # 评委配置整体替换：未传的字段取默认值（嵌套模型的 exclude_unset 会丢掉它们）
+    judge = payload.judge.model_dump() if payload.judge is not None else None
+    if judge is not None:
+        if judge["model_id"]:
+            await _judge_model(session, judge["model_id"], context.workspace_id)
+        suite.judge_config = {**judge, "rubric": judge["rubric"].strip()}
     for key, value in changes.items():
         setattr(suite, key, value.strip() if isinstance(value, str) else value)
     await session.commit()
@@ -525,11 +544,28 @@ async def update_evaluation_case(
     return _case_payload(case)
 
 
+async def _judge_model(session: AsyncSession, model_id: str, workspace_id: str) -> ModelConfig:
+    model = await session.get(ModelConfig, model_id)
+    if model is None or model.workspace_id != workspace_id or model.model_type != ModelType.LLM or not model.is_enabled:
+        raise HTTPException(status_code=422, detail="评委模型不存在、已停用或不是对话模型")
+    return model
+
+
+async def _suite_judge(session: AsyncSession, suite: EvaluationSuite, workspace_id: str) -> tuple[ModelGateway, dict[str, Any]] | None:
+    config = suite.judge_config or {}
+    if not config.get("model_id"):
+        return None
+    model = await _judge_model(session, config["model_id"], workspace_id)
+    return build_gateway(model), {"rubric": config.get("rubric") or DEFAULT_RUBRIC, "pass_score": float(config.get("pass_score") or DEFAULT_PASS_SCORE)}
+
+
 def _normalized(value: str) -> str:
     return re.sub(r"\s+", "", value).lower()
 
 
-async def _evaluate_case(session: AsyncSession, manifest: Manifest, case: EvaluationCase, workspace_id: str) -> dict[str, Any]:
+async def _evaluate_case(
+    session: AsyncSession, manifest: Manifest, case: EvaluationCase, workspace_id: str, judge: tuple[ModelGateway, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     reasons: list[str] = []
     try:
         input_values = dict(case.input_values)
@@ -554,9 +590,21 @@ async def _evaluate_case(session: AsyncSession, manifest: Manifest, case: Evalua
         if case.require_citations and not result["citations"]:
             reasons.append("没有引用来源")
         has_explicit_rules = bool(case.expected_keywords or case.forbidden_keywords or case.require_citations)
-        if case.case_type != "good" and case.expected_output and not has_explicit_rules and _normalized(content) != _normalized(case.expected_output):
+        # 配了评委时，标准答案交给评委对照语义判断，不再要求逐字一致
+        if judge is None and case.case_type != "good" and case.expected_output and not has_explicit_rules and _normalized(content) != _normalized(case.expected_output):
             reasons.append("输出与标准答案不一致")
-        return {"case_id": case.id, "name": case.name, "passed": not reasons, "reasons": reasons, "output": content, "simulated": result["simulated"]}
+        verdict: dict[str, Any] = {}
+        if judge is not None:
+            gateway, config = judge
+            try:
+                score, reason = await judge_output(gateway, message=case.message, input_values=input_values, output=content, reference=case.expected_output, rubric=config["rubric"])
+                verdict = {"judge_score": score, "judge_reason": reason}
+                if score < config["pass_score"]:
+                    reasons.append(f"评委评分 {score:g} 低于及格线 {config['pass_score']:g}")
+            except ValueError as exc:
+                verdict = {"judge_score": None, "judge_reason": str(exc)}
+                reasons.append(str(exc))
+        return {"case_id": case.id, "name": case.name, "passed": not reasons, "reasons": reasons, "output": content, "simulated": result["simulated"], **verdict}
     except Exception as exc:
         return {"case_id": case.id, "name": case.name, "passed": False, "reasons": [str(exc)], "output": "", "simulated": False}
 
@@ -600,7 +648,8 @@ async def run_evaluation_set(
     ready_cases = _ready_cases(suite)
     manifest = _draft_manifest(app)
     run = EvaluationRun(suite_id=suite.id, status=RunStatus.RUNNING, manifest_hash=manifest_fingerprint(manifest))
-    results = [await _evaluate_case(session, manifest, case, context.workspace_id) for case in ready_cases]
+    judge = await _suite_judge(session, suite, context.workspace_id)
+    results = [await _evaluate_case(session, manifest, case, context.workspace_id, judge) for case in ready_cases]
     run.results = results
     run.simulated = any(item["simulated"] for item in results)
     session.add(run)
@@ -644,7 +693,7 @@ async def step_evaluation_run(
     done = {item["case_id"] for item in run.results}
     remaining = [case for case in ready_cases if case.id not in done]
     if remaining:
-        result = await _evaluate_case(session, manifest, remaining[0], context.workspace_id)
+        result = await _evaluate_case(session, manifest, remaining[0], context.workspace_id, await _suite_judge(session, suite, context.workspace_id))
         run.results = [*run.results, result]  # 重新赋值，确保 JSON 列被标记为已修改
         run.simulated = run.simulated or result["simulated"]
         run.passed_count = sum(item["passed"] for item in run.results)
