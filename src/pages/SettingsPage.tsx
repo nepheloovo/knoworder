@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Plus, ScrollText, Search, Trash2, Users } from 'lucide-react';
+import { Check, Copy, KeyRound, Minus, Plus, ScrollText, Search, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiFetch, errorMessage } from '../api/client';
@@ -6,7 +6,7 @@ import { useAuth } from '../auth';
 import { ConfirmModal, Empty, Field, Loading, Modal, Notice, Spinner, Tag, formatTime, useToast } from '../components/ui';
 import type { Role } from '../types';
 
-type Tab = 'members' | 'tokens' | 'audit';
+type Tab = 'members' | 'roles' | 'tokens' | 'audit';
 type AuditEvent = { id: string; actor_name: string; action: string; resource_type: string; resource_id: string | null; detail: Record<string, unknown>; created_at: string };
 type Member = { id: string; email: string; display_name: string; is_active: boolean; role: Role; joined_at: string };
 type ApiClientItem = { id: string; name: string; role: 'admin' | 'manager'; scopes: string[]; last_used_at: string | null };
@@ -20,16 +20,17 @@ const SCOPES: Array<[string, string]> = [
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const requested = params.get('tab');
-  const tab: Tab = requested === 'tokens' || requested === 'audit' ? requested : 'members';
+  const tab: Tab = requested === 'roles' || requested === 'tokens' || requested === 'audit' ? requested : 'members';
   return (
     <div className="page" style={{ maxWidth: 1080 }}>
       <div className="page-head"><div className="grow"><h1>设置</h1><p>管理业务空间成员、业务系统调用用的 API Token，并查看操作审计。</p></div></div>
       <div className="seg" style={{ marginBottom: 16 }}>
         <button className={tab === 'members' ? 'active' : ''} onClick={() => setParams({ tab: 'members' })}><Users size={14} />成员</button>
+        <button className={tab === 'roles' ? 'active' : ''} onClick={() => setParams({ tab: 'roles' })}><ShieldCheck size={14} />角色与权限</button>
         <button className={tab === 'tokens' ? 'active' : ''} onClick={() => setParams({ tab: 'tokens' })}><KeyRound size={14} />API Token</button>
         <button className={tab === 'audit' ? 'active' : ''} onClick={() => setParams({ tab: 'audit' })}><ScrollText size={14} />审计日志</button>
       </div>
-      {tab === 'members' ? <MembersView /> : tab === 'tokens' ? <TokensView /> : <AuditView />}
+      {tab === 'members' ? <MembersView /> : tab === 'roles' ? <RolesView /> : tab === 'tokens' ? <TokensView /> : <AuditView />}
     </div>
   );
 }
@@ -215,6 +216,42 @@ function AuditView() {
           ))}</tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+// 与后端各路由的 require_roles 保持一致；角色目前是内置的三种，暂不支持自定义
+const PERMISSIONS: Array<[string, [boolean, boolean, boolean]]> = [
+  ['在工作台使用已发布的应用、查看自己的对话', [true, true, true]],
+  ['搭建、调试、发布、回滚应用，管理分享链接', [true, true, false]],
+  ['管理知识库：导入、切块、检索测试', [true, true, false]],
+  ['评测集、发布门禁与 LLM 评委', [true, true, false]],
+  ['看板与可观测：运行 Trace、对话日志、用量与费用', [true, true, false]],
+  ['集成：模型与工具配置', [true, false, false]],
+  ['设置：成员、API Token、审计日志', [true, false, false]],
+];
+const ROLE_DESC: Record<Role, string> = {
+  admin: '业务空间的全部权限，包括模型密钥、成员和审计。',
+  manager: '负责应用交付：搭建应用、维护知识库、跑评测和看运营数据。',
+  user: '业务人员：只能使用已发布的应用。',
+};
+
+function RolesView() {
+  const roles: Role[] = ['admin', 'manager', 'user'];
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <div className="grid c3">
+        {roles.map((role) => <div key={role} className="card pad row" style={{ alignItems: 'flex-start' }}><ShieldCheck size={20} color="var(--primary)" /><div className="grow"><strong>{ROLE_LABEL[role]}</strong><div className="faint" style={{ marginTop: 4 }}>{ROLE_DESC[role]}</div></div></div>)}
+      </div>
+      <div className="card pad">
+        <table className="table">
+          <thead><tr><th>权限</th>{roles.map((role) => <th key={role} style={{ textAlign: 'center' }}>{ROLE_LABEL[role]}</th>)}</tr></thead>
+          <tbody>{PERMISSIONS.map(([label, allowed]) => (
+            <tr key={label}><td>{label}</td>{allowed.map((ok, index) => <td key={index} style={{ textAlign: 'center' }}>{ok ? <Check size={16} color="var(--green)" aria-label="允许" /> : <Minus size={16} className="faint" aria-label="不允许" />}</td>)}</tr>
+          ))}</tbody>
+        </table>
+        <p className="faint" style={{ marginTop: 10 }}>角色在「成员」页签中分配。自定义角色、按部门设置应用可见范围需要接入企业 SSO 后提供。</p>
+      </div>
     </div>
   );
 }
