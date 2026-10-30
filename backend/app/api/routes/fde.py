@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -101,11 +101,21 @@ def _draft(app: QAApp) -> Manifest:
     return Manifest.model_validate(app.draft_manifest) if app.draft_manifest else manifest_from_qa_app(app)
 
 
+def _parse_manifest(payload: dict[str, Any]) -> Manifest:
+    try:
+        return Manifest.model_validate(payload)
+    except ValidationError as exc:
+        issues = [{"path": ".".join(str(part) for part in error["loc"]) or "manifest", "message": error["msg"]} for error in exc.errors()]
+        raise HTTPException(status_code=422, detail={"message": "应用配置不符合协议", "issues": issues}) from exc
+
+
 async def _app(session: AsyncSession, app_id: str, workspace_id: str) -> QAApp:
     result = await session.scalars(
         select(QAApp)
         .where(QAApp.id == app_id, QAApp.workspace_id == workspace_id)
         .options(selectinload(QAApp.knowledge_bases), selectinload(QAApp.versions))
+        # 同一请求里刚新增的版本不在已加载的 versions 集合中，必须刷新，否则发布响应里 published_version 为空
+        .execution_options(populate_existing=True)
     )
     app = result.one_or_none()
     if not app:
@@ -218,7 +228,7 @@ async def design(payload: DesignRequest, context: AuthContext = Depends(require_
 
 @router.post("/apps", status_code=201)
 async def create_app(payload: AppCreateRequest, context: AuthContext = Depends(require_roles("admin", "manager")), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    manifest = Manifest.model_validate(payload.manifest)
+    manifest = _parse_manifest(payload.manifest)
     app = QAApp(workspace_id=context.workspace_id, status="draft", is_enabled=False)
     await _save_manifest(session, app, manifest)
     session.add(app)
@@ -386,7 +396,7 @@ async def revoke_share(app_id: str, share_id: str, context: AuthContext = Depend
 @router.put("/apps/{app_id}/manifest")
 async def update_manifest(app_id: str, payload: ManifestRequest, context: AuthContext = Depends(require_roles("admin", "manager")), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
     app = await _app(session, app_id, context.workspace_id)
-    manifest = Manifest.model_validate(payload.manifest)
+    manifest = _parse_manifest(payload.manifest)
     await _save_manifest(session, app, manifest)
     app.status = "draft"
     await _audit(session, context, "application.draft_updated", app.id)

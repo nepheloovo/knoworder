@@ -13,7 +13,7 @@ from ...db import get_session
 from ...fde import Manifest, manifest_fingerprint, manifest_from_qa_app
 from ...fde.runtime import execute_manifest
 from ...providers import build_gateway
-from ...services.eval_design import DESIGN_RULES, MAX_CASES, default_rule_keys, design_cases
+from ...services.eval_design import DESIGN_RULES, MAX_CASES, default_rule_keys, design_cases, template_cases
 from ...models import (
     AppVersion,
     AuditEvent,
@@ -23,6 +23,7 @@ from ...models import (
     EvaluationSuite,
     Message,
     ModelConfig,
+    ProviderName,
     QAApp,
     QueryLog,
     RunStatus,
@@ -344,6 +345,13 @@ async def create_evaluation_set(
     return await _set_payload(session, suite, app, include_cases=True)
 
 
+def _designs_with_model(model: ModelConfig | None) -> bool:
+    """未配置预设回复的测试替身只会返回固定文案，设计不出用例，与没有模型一样按规则模板生成。"""
+    if model is None or not model.is_enabled:
+        return False
+    return model.provider != ProviderName.MOCK or bool(model.config.get("response_text"))
+
+
 @router.get("/design-rules")
 async def evaluation_design_rules(
     app_id: str,
@@ -353,11 +361,12 @@ async def evaluation_design_rules(
     """评测规则目录，以及按应用场景、是否关联知识库推荐的默认勾选。"""
     app = await _app(session, app_id, context.workspace_id)
     manifest = _draft_manifest(app)
+    model = await session.get(ModelConfig, manifest.llm_model_id) if manifest.llm_model_id else None
     return {
         "rules": [{key: rule[key] for key in ("key", "name", "description")} | {"needs_knowledge": bool(rule.get("needs_knowledge"))} for rule in DESIGN_RULES],
         "recommended": default_rule_keys(manifest.template_key, bool(manifest.knowledge_base_ids)),
         "has_knowledge": bool(manifest.knowledge_base_ids),
-        "has_model": bool(manifest.llm_model_id),
+        "has_model": _designs_with_model(model),
     }
 
 
@@ -367,14 +376,13 @@ async def ai_design_evaluation_set(
     context: AuthContext = Depends(require_roles("admin", "manager")),
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    """用应用当前选择的对话模型，按规则与业务方向生成可直接运行的评测 Case。"""
+    """用应用当前选择的对话模型，按规则与业务方向生成可直接运行的评测 Case；没有真实模型时按规则模板生成。"""
     app = await _app(session, payload.app_id, context.workspace_id)
     manifest = _draft_manifest(app)
-    if not manifest.llm_model_id:
-        raise HTTPException(status_code=422, detail="应用还没有选择对话模型，请先在编排中选择，评测设计会使用该模型")
-    model = await session.get(ModelConfig, manifest.llm_model_id)
-    if model is None or not model.is_enabled:
+    model = await session.get(ModelConfig, manifest.llm_model_id) if manifest.llm_model_id else None
+    if manifest.llm_model_id and (model is None or not model.is_enabled):
         raise HTTPException(status_code=422, detail="应用的对话模型不存在或已停用")
+    use_template = not _designs_with_model(model)
     samples: list[str] = []
     if manifest.knowledge_base_ids:
         rows = await session.scalars(
@@ -382,9 +390,8 @@ async def ai_design_evaluation_set(
         )
         samples = [item for item in rows if item and item.strip()]
     try:
-        cases = await design_cases(
-            build_gateway(model), manifest, rule_keys=payload.rule_keys, directions=payload.directions, count=payload.count, knowledge_samples=samples,
-        )
+        options = {"rule_keys": payload.rule_keys, "directions": payload.directions, "count": payload.count, "knowledge_samples": samples}
+        cases = template_cases(manifest, **options) if use_template else await design_cases(build_gateway(model), manifest, **options)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -402,10 +409,10 @@ async def ai_design_evaluation_set(
         session.add(suite)
         await session.flush()
     for item in cases:
-        case = EvaluationCase(suite_id=suite.id, case_type="ai", created_by=context.user_id, source_snapshot={"captured_from": "ai_design", "model": model.model_name}, expected_output="", **item)
+        case = EvaluationCase(suite_id=suite.id, case_type="ai", created_by=context.user_id, source_snapshot={"captured_from": "rule_template" if use_template else "ai_design", "model": None if use_template else model.model_name}, expected_output="", **item)
         case.readiness = _case_readiness(case)
         session.add(case)
-    session.add(AuditEvent(workspace_id=context.workspace_id, actor_id=context.user_id, action="evaluation_set.ai_designed", resource_type="evaluation_set", resource_id=suite.id, detail={"count": len(cases), "rules": payload.rule_keys}))
+    session.add(AuditEvent(workspace_id=context.workspace_id, actor_id=context.user_id, action="evaluation_set.ai_designed", resource_type="evaluation_set", resource_id=suite.id, detail={"count": len(cases), "rules": payload.rule_keys, "template": use_template}))
     await session.commit()
     return await _set_payload(session, suite, app, include_cases=True)
 

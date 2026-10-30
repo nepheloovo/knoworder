@@ -55,3 +55,21 @@ async def test_ai_design_requires_rules_or_directions_and_a_model(client: AsyncC
     assert empty.status_code == 422 and "规则" in empty.json()["detail"]
     nothing = await client.post("/api/v1/evaluation-sets/ai-design", headers=ADMIN, json={"app_id": app_id, "rule_keys": ["format"]})
     assert nothing.status_code == 422  # model produced no runnable cases
+
+
+async def test_ai_design_falls_back_to_rule_templates_without_a_real_model(client: AsyncClient) -> None:
+    app_id = await content_app(client, await priced_mock_llm(client))
+    manifest = (await client.get(f"/api/v1/fde/apps/{app_id}", headers=ADMIN)).json()["manifest"]
+    manifest["llm_model_id"] = None
+    assert (await client.put(f"/api/v1/fde/apps/{app_id}/manifest", headers=ADMIN, json={"manifest": manifest})).status_code == 200
+    rules = (await client.get("/api/v1/evaluation-sets/design-rules", headers=ADMIN, params={"app_id": app_id})).json()
+    assert rules["has_model"] is False
+
+    created = await client.post(
+        "/api/v1/evaluation-sets/ai-design", headers=ADMIN,
+        json={"app_id": app_id, "rule_keys": ["generation_quality", "safety"], "directions": "", "count": 4},
+    )
+    assert created.status_code == 201, created.text
+    cases = created.json()["cases"]
+    assert cases and all("规则模板" in case["tags"] for case in cases)
+    assert all(case["expected_keywords"] or case["forbidden_keywords"] or case["require_citations"] for case in cases)
