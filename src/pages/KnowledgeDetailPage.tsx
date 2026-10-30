@@ -12,11 +12,12 @@ import {
 } from '../components/ui';
 import { withRetrievalConfig } from '../lib/apps';
 import { ACTIVE_STATUSES, configProblem, defaultChunkConfig, FILE_STATUS, METHOD_LABEL, modelsOf, recommendedMethod, STAGE_LABEL } from '../lib/knowledge';
+import { C } from '../theme';
 
 function FileIcon({ file }: { file: Pick<ApiKnowledgeFile, 'extension' | 'filename'> }) {
-  if (['csv', 'xlsx', 'xlsm'].includes(file.extension)) return <FileSpreadsheet size={17} color="#12b76a" />;
-  if (file.filename.startsWith('http')) return <Globe size={17} color="#12b76a" />;
-  return <FileText size={17} color="#3370ff" />;
+  if (['csv', 'xlsx', 'xlsm'].includes(file.extension)) return <FileSpreadsheet size={17} color={C.success} />;
+  if (file.filename.startsWith('http')) return <Globe size={17} color={C.success} />;
+  return <FileText size={17} color={C.primary} />;
 }
 
 export function KnowledgeDetailPage() {
@@ -394,7 +395,7 @@ function SearchView({ kb, usedBy }: { kb: ApiKnowledgeBase; usedBy: FDEApp[] }) 
   const highlight = (text: string) => {
     if (!words.length) return text;
     const re = new RegExp(`(${words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'g');
-    return text.split(re).map((part, index) => (words.includes(part) ? <mark key={index} style={{ background: '#fef0c7', padding: '0 2px', borderRadius: 3 }}>{part}</mark> : part));
+    return text.split(re).map((part, index) => (words.includes(part) ? <mark key={index} style={{ background: C.markBg, padding: '0 2px', borderRadius: 3 }}>{part}</mark> : part));
   };
 
   return (
@@ -537,7 +538,7 @@ function SettingsView({ kb, onSaved, usedBy }: { kb: ApiKnowledgeBase; onSaved: 
         <div className="grow"><strong>重建全部索引</strong><div className="faint">按每个文件各自的切块配置重新解析和向量化；构建中旧分块会被替换。</div></div>
         <button className="btn" onClick={() => setRebuild(true)}><RefreshCw size={14} />重建</button>
       </div>
-      <div className="card pad row" style={{ marginTop: 16, borderColor: '#fee4e2' }}>
+      <div className="card pad row" style={{ marginTop: 16, borderColor: C.dangerSoft }}>
         <div className="grow"><strong>删除知识库</strong><div className="faint">删除 {kb.file_count} 个文件和全部索引{usedBy.length ? `，${usedBy.length} 个应用正在引用` : ''}。</div></div>
         <button className="btn danger" onClick={() => setRemoving(true)}><Trash2 size={14} />删除</button>
       </div>

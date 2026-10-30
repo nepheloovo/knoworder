@@ -5,6 +5,7 @@ import { ApiError, errorMessage } from '../api/client';
 import { fdeApi, type AppManifest, type Citation, type RunResult } from '../api/fde';
 import { Markdown } from './Markdown';
 import { AppTile, Drawer, Field, Notice, Spinner, Tag, formatDuration, useToast } from './ui';
+import { C } from '../theme';
 
 type Step = RunResult['agent_steps'][number];
 
@@ -26,9 +27,9 @@ interface Msg {
 export type ChatMode = 'debug' | 'run' | 'share';
 
 const STEP_ICON: Record<string, ReactNode> = {
-  retrieval: <BookOpen size={13} color="#12b76a" />,
-  handoff: <Headset size={13} color="#f79009" />,
-  tool: <Wrench size={13} color="#3370ff" />,
+  retrieval: <BookOpen size={13} color={C.success} />,
+  handoff: <Headset size={13} color={C.warning} />,
+  tool: <Wrench size={13} color={C.primary} />,
 };
 
 const STEP_LABEL = (step: Step) => step.label ?? (step.kind === 'retrieval' ? '知识库检索' : step.kind === 'handoff' ? '转人工' : step.tool);
@@ -209,15 +210,15 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
           </div>
         ) : null}
         {msgs.map((m) => m.role === 'user' ? (
-          <div key={m.id} className="msg user"><span className="who" style={{ background: '#ffd8b5', color: '#93370d', fontSize: 13, fontWeight: 600 }}>我</span><div className="bubble">{m.content}</div></div>
+          <div key={m.id} className="msg user"><span className="who" style={{ background: C.avatarBg, color: C.avatarText, fontSize: 13, fontWeight: 600 }}>我</span><div className="bubble">{m.content}</div></div>
         ) : (
           <div key={m.id} className="msg">
             <span className="who" style={{ background: 'transparent' }}><AppTile templateKey={manifest.template_key} type={manifest.type} size="sm" /></span>
             <div style={{ maxWidth: 'min(720px, 88%)', minWidth: 0 }}>
               {m.steps?.length && (debug || manifest.agent.show_tool_steps) ? <StepsView steps={m.steps} open={debug} /> : null}
-              <div className="bubble" style={{ maxWidth: '100%', whiteSpace: 'normal', borderColor: m.error ? '#fee4e2' : undefined, background: m.error ? 'var(--red-50)' : undefined }}>
+              <div className="bubble" style={{ maxWidth: '100%', whiteSpace: 'normal', borderColor: m.error ? C.dangerSoft : undefined, background: m.error ? 'var(--red-50)' : undefined }}>
                 {m.pending ? <span className="row muted"><Spinner size={14} />{manifest.type === 'agent' ? '正在思考并调用工具…' : '正在生成…'}</span> : null}
-                {m.error ? <span className="row" style={{ color: '#b42318', alignItems: 'flex-start' }}><CircleAlert size={15} style={{ flex: 'none', marginTop: 3 }} /><span>{m.error}</span></span> : null}
+                {m.error ? <span className="row" style={{ color: C.dangerText, alignItems: 'flex-start' }}><CircleAlert size={15} style={{ flex: 'none', marginTop: 3 }} /><span>{m.error}</span></span> : null}
                 {m.content ? <Markdown text={m.content} /> : null}
                 {m.citations?.length ? (
                   <div className="msg-meta" style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
@@ -237,8 +238,8 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
                 <div className="row wrap" style={{ marginTop: 6, gap: 2 }}>
                   {m.handoff ? <Tag tone="orange"><Headset size={12} />已转人工</Tag> : null}
                   {m.messageId && !m.error ? <>
-                    <button className="btn ghost sm icon" aria-label="有帮助" onClick={() => void feedback(m.messageId!, 1)}><ThumbsUp size={14} color={rated[m.messageId] === 1 ? '#3370ff' : undefined} /></button>
-                    <button className="btn ghost sm icon" aria-label="没帮助" onClick={() => void feedback(m.messageId!, -1)}><ThumbsDown size={14} color={rated[m.messageId] === -1 ? '#f04438' : undefined} /></button>
+                    <button className="btn ghost sm icon" aria-label="有帮助" onClick={() => void feedback(m.messageId!, 1)}><ThumbsUp size={14} color={rated[m.messageId] === 1 ? C.primary : undefined} /></button>
+                    <button className="btn ghost sm icon" aria-label="没帮助" onClick={() => void feedback(m.messageId!, -1)}><ThumbsDown size={14} color={rated[m.messageId] === -1 ? C.danger : undefined} /></button>
                   </> : null}
                   {debug && m.meta ? <span className="faint" style={{ marginLeft: 6 }}>{m.meta.model} · {m.meta.tokens ?? '—'} tokens · {formatDuration(m.meta.duration)}{m.meta.simulated ? ' · 测试替身' : ''}</span> : null}
                   {debug && m.traceId ? <Link className="btn ghost sm" to={`/observability?view=runs&trace=${m.traceId}`}><Activity size={13} />查看 Trace</Link> : null}

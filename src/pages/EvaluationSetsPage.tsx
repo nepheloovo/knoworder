@@ -148,7 +148,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
       <div className="grid c4" style={{ marginBottom: 16 }}>
         <div className="card stat"><div className="label">Case 总数</div><div className="value">{set.case_count}</div></div>
         <div className="card stat"><div className="label">可运行</div><div className="value">{set.ready_count}</div></div>
-        <div className="card stat"><div className="label">待补标准</div><div className="value" style={{ color: set.needs_standard_count ? '#b54708' : undefined }}>{set.needs_standard_count}</div></div>
+        <div className="card stat"><div className="label">待补标准</div><div className="value" style={{ color: set.needs_standard_count ? 'var(--orange-text)' : undefined }}>{set.needs_standard_count}</div></div>
         <div className="card stat"><div className="label">{lastRun?.status === 'running' ? '本次进行中' : '最近通过率'}</div><div className="value" style={{ color: lastRun ? (lastRun.failed_count ? 'var(--red)' : 'var(--green)') : undefined }}>{lastRun ? `${Math.round((lastRun.passed_count / Math.max(1, lastRun.passed_count + lastRun.failed_count)) * 100)}%` : '—'}</div>{lastRun ? <div className="faint">{formatTime(lastRun.created_at)}{lastRun.simulated ? ' · 含测试替身' : ''}</div> : null}</div>
       </div>
       {running ? (

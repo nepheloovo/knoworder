@@ -7,6 +7,7 @@ import {
 import { ChunkConfigFields } from '../components/ChunkConfigFields';
 import { Field, Loading, Notice, Spinner, Tag, formatBytes, useToast } from '../components/ui';
 import { ACTIVE_STATUSES, CHUNK_METHODS, configProblem, defaultChunkConfig, detectRecommendation, METHOD_LABEL, STAGE_LABEL, type ChunkMethod } from '../lib/knowledge';
+import { C } from '../theme';
 
 type Source = 'file' | 'web' | 'text' | 'feishu' | 'api';
 
@@ -233,7 +234,7 @@ export function ImportWizardPage() {
               <div className="col" style={{ marginTop: 16, gap: 8 }}>
                 {items.map((item) => (
                   <div key={item.id} className="card row" style={{ padding: '10px 14px' }}>
-                    {/\.(csv|xlsx|xlsm)$/i.test(item.file.name) ? <FileSpreadsheet size={18} color="#12b76a" /> : <FileText size={18} color="#3370ff" />}
+                    {/\.(csv|xlsx|xlsm)$/i.test(item.file.name) ? <FileSpreadsheet size={18} color={C.success} /> : <FileText size={18} color={C.primary} />}
                     <div className="grow"><div style={{ fontWeight: 500 }}>{item.file.name}</div><div className="faint">{formatBytes(item.file.size)} · 将按「{METHOD_LABEL[item.recommended]}」切块（{item.reason}）</div></div>
                     <button className="btn ghost sm icon" aria-label={`移除 ${item.file.name}`} onClick={() => setItems((current) => current.filter((entry) => entry.id !== item.id))}><X size={14} /></button>
                   </div>
@@ -255,7 +256,7 @@ export function ImportWizardPage() {
                 const table = /\.(csv|xlsx|xlsm)$/i.test(item.file.name);
                 return (
                   <button key={item.id} className={`sub-link ${item.id === active.id ? 'active' : ''}`} style={{ flexDirection: 'column', alignItems: 'stretch', gap: 2, padding: '8px 10px' }} onClick={() => setActiveId(item.id)}>
-                    <span className="row" style={{ gap: 6 }}>{table ? <FileSpreadsheet size={15} color="#12b76a" /> : <FileText size={15} />}<span className="grow ellipsis">{item.file.name}</span></span>
+                    <span className="row" style={{ gap: 6 }}>{table ? <FileSpreadsheet size={15} color={C.success} /> : <FileText size={15} />}<span className="grow ellipsis">{item.file.name}</span></span>
                     <span className="row" style={{ gap: 4, paddingLeft: 21 }}>
                       {problem ? <Tag tone="red">需调整</Tag> : <span className="faint" style={{ fontSize: 12 }}>{METHOD_LABEL[item.config.method]}{item.config.method === item.recommended ? ' · 自动' : ' · 已调整'}</span>}
                       {item.preview ? <span className="faint" style={{ fontSize: 12 }}>· {item.preview.total_chunks} 块</span> : null}
@@ -321,10 +322,10 @@ export function ImportWizardPage() {
               <thead><tr><th>数据源</th><th>切块方式</th><th>预览分块</th><th style={{ width: 240 }}>{step === 4 ? '进度' : '状态'}</th></tr></thead>
               <tbody>
                 {source === 'web' ? (
-                  <tr><td><div className="row"><Globe size={16} color="#12b76a" />{web.title || web.url}</div></td><td><Tag tone="blue">{METHOD_LABEL[web.method]}</Tag></td><td>—</td><td><UploadState upload={uploads[0]} pending={step === 3} /></td></tr>
+                  <tr><td><div className="row"><Globe size={16} color={C.success} />{web.title || web.url}</div></td><td><Tag tone="blue">{METHOD_LABEL[web.method]}</Tag></td><td>—</td><td><UploadState upload={uploads[0]} pending={step === 3} /></td></tr>
                 ) : items.map((item, index) => (
                   <tr key={item.id}>
-                    <td><div className="row"><FileText size={16} color="#3370ff" />{item.file.name}</div></td>
+                    <td><div className="row"><FileText size={16} color={C.primary} />{item.file.name}</div></td>
                     <td><Tag tone="blue">{METHOD_LABEL[item.config.method]}</Tag></td>
                     <td>{item.preview ? item.preview.total_chunks : <span className="faint">未预览</span>}</td>
                     <td><UploadState upload={uploads.find((upload) => upload.id === item.id) ?? (step === 4 && importing && index >= uploads.length ? { id: item.id, name: item.file.name } : undefined)} pending={step === 3} /></td>

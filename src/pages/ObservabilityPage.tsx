@@ -13,6 +13,7 @@ import { CaseReturnModal, type CaseReturn } from '../components/CaseReturnModal'
 import { Markdown } from '../components/Markdown';
 import { Drawer, Empty, Loading, Notice, Spinner, Tag, formatCost, formatDuration, formatTime, formatTokens, useToast } from '../components/ui';
 import { FILE_STATUS, METHOD_LABEL, STAGE_LABEL, ACTIVE_STATUSES, type ChunkMethod } from '../lib/knowledge';
+import { C } from '../theme';
 
 type ViewKey = 'overview' | 'runs' | 'conversations' | 'builds' | 'usage';
 
@@ -25,14 +26,14 @@ const VIEWS: Array<{ key: ViewKey; name: string; icon: LucideIcon }> = [
 ];
 
 const SPAN_META: Record<string, { label: string; icon: LucideIcon; color: string }> = {
-  context: { label: '上下文', icon: Layers3, color: '#667085' },
-  retrieval: { label: '知识检索', icon: BookOpen, color: '#12b76a' },
-  model: { label: '模型', icon: Sparkles, color: '#7a5af8' },
-  tool: { label: '工具', icon: Wrench, color: '#3370ff' },
-  handoff: { label: '转人工', icon: Headset, color: '#f79009' },
-  guardrail: { label: '护栏', icon: ShieldAlert, color: '#dd2590' },
-  harness: { label: 'Harness', icon: ShieldAlert, color: '#f04438' },
-  error: { label: '错误', icon: XCircle, color: '#f04438' },
+  context: { label: '上下文', icon: Layers3, color: C.slate },
+  retrieval: { label: '知识检索', icon: BookOpen, color: C.success },
+  model: { label: '模型', icon: Sparkles, color: C.violet },
+  tool: { label: '工具', icon: Wrench, color: C.primary },
+  handoff: { label: '转人工', icon: Headset, color: C.warning },
+  guardrail: { label: '护栏', icon: ShieldAlert, color: C.rose },
+  harness: { label: 'Harness', icon: ShieldAlert, color: C.danger },
+  error: { label: '错误', icon: XCircle, color: C.danger },
 };
 
 function RunStatus({ status, handoff }: { status: string; handoff?: boolean }) {
@@ -112,7 +113,7 @@ function OverviewView({ days, appId, onTrace, setView }: { days: number; appId: 
           <div className="row section-row"><div><strong>每日运行</strong><div className="faint">失败次数以红色显示</div></div><span className="grow" /><span className="faint">好评 {data.feedback.up} · 差评 {data.feedback.down}</span></div>
           <div className="bar-chart" style={{ height: 150, marginBottom: 26, gap: 8 }}>
             {data.daily.map((item) => (
-              <div key={item.date} style={{ height: `${Math.max(2, (item.runs / max) * 100)}%`, background: item.failed ? `linear-gradient(to top, #f04438 ${(item.failed / Math.max(1, item.runs)) * 100}%, var(--primary-100) 0)` : undefined }} title={`${item.date}：${item.runs} 次，失败 ${item.failed}，${formatTokens(item.tokens)} tokens`}>
+              <div key={item.date} style={{ height: `${Math.max(2, (item.runs / max) * 100)}%`, background: item.failed ? `linear-gradient(to top, ${C.danger} ${(item.failed / Math.max(1, item.runs)) * 100}%, var(--primary-100) 0)` : undefined }} title={`${item.date}：${item.runs} 次，失败 ${item.failed}，${formatTokens(item.tokens)} tokens`}>
                 <span>{item.date.slice(5)}</span>
               </div>
             ))}
@@ -120,7 +121,7 @@ function OverviewView({ days, appId, onTrace, setView }: { days: number; appId: 
         </section>
         <section className="card pad">
           <div className="row section-row"><div><strong>需要处理</strong><div className="faint">最近失败的运行</div></div><span className="grow" /><button className="btn sm ghost" onClick={() => setView('runs')}>全部<ArrowRight size={13} /></button></div>
-          {!data.recent_failures.length ? <Empty icon={<CheckCircle2 size={22} color="#12b76a" />} title="没有失败运行" /> : data.recent_failures.map((item) => (
+          {!data.recent_failures.length ? <Empty icon={<CheckCircle2 size={22} color={C.success} />} title="没有失败运行" /> : data.recent_failures.map((item) => (
             <button key={item.trace_id} className="incident-row high" onClick={() => onTrace(item.trace_id)}>
               <span className="incident-icon"><XCircle size={17} /></span>
               <span className="grow" style={{ minWidth: 0 }}><strong className="ellipsis">{item.query}</strong><small className="clamp-2">{item.error_message}</small></span>
@@ -192,14 +193,14 @@ function RunsView({ appId, onTrace, onReturn }: { appId: string; onTrace: (id: s
             <tbody>{data.items.map((run) => (
               <tr key={run.trace_id} className="clickable" onClick={() => onTrace(run.trace_id)}>
                 <td onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`选择 ${run.query}`} disabled={!run.app_id} checked={selected.some((item) => item.trace_id === run.trace_id)} onChange={() => toggle(run)} /></td>
-                <td><div className="trace-primary ellipsis">{run.query}</div>{run.error_message ? <div className="faint ellipsis" style={{ maxWidth: 320, color: '#b42318' }}>{run.error_message}</div> : <code>{run.trace_id.slice(0, 8)}</code>}</td>
+                <td><div className="trace-primary ellipsis">{run.query}</div>{run.error_message ? <div className="faint ellipsis" style={{ maxWidth: 320, color: C.dangerText }}>{run.error_message}</div> : <code>{run.trace_id.slice(0, 8)}</code>}</td>
                 <td>{run.app_name ?? '—'}<div className="faint">{run.app_version ? `v${run.app_version}` : '草稿'} · {CHANNEL_LABEL[run.channel] ?? run.channel}</div></td>
                 <td><RunStatus status={run.status} handoff={run.handoff} /></td>
                 <td className="faint">模型 {run.model_calls} · 检索 {run.retrievals} · 工具 {run.tool_calls}{run.errors ? <Tag tone="red">{run.errors} 错误</Tag> : null}</td>
                 <td>{formatDuration(run.duration_ms)}</td>
                 <td>{formatTokens(run.tokens.total)}</td>
                 <td>{formatCost(run.cost, run.currency)}</td>
-                <td>{run.feedback === 1 ? <ThumbsUp size={15} color="#12b76a" /> : run.feedback === -1 ? <ThumbsDown size={15} color="#f04438" /> : <span className="faint">—</span>}</td>
+                <td>{run.feedback === 1 ? <ThumbsUp size={15} color={C.success} /> : run.feedback === -1 ? <ThumbsDown size={15} color={C.danger} /> : <span className="faint">—</span>}</td>
                 <td className="faint">{formatTime(run.started_at)}</td>
               </tr>
             ))}</tbody>
@@ -219,14 +220,14 @@ function RunsView({ appId, onTrace, onReturn }: { appId: string; onTrace: (id: s
 
 function SpanRow({ span }: { span: Span }) {
   const [open, setOpen] = useState(span.status !== 'success');
-  const meta = SPAN_META[span.kind] ?? { label: span.kind, icon: Activity, color: '#667085' };
+  const meta = SPAN_META[span.kind] ?? { label: span.kind, icon: Activity, color: C.slate };
   const Icon = meta.icon;
   const tokens = span.metadata.tokens as { input?: number; output?: number; total?: number } | undefined;
   const toolCalls = span.metadata.tool_calls as Array<{ name: string; arguments: unknown }> | undefined;
   const failed = ['error', 'failed'].includes(span.status);
   return (
     <div className="span-row">
-      <span className="span-dot" style={{ background: failed ? '#f04438' : meta.color }}><Icon size={12} /></span>
+      <span className="span-dot" style={{ background: failed ? C.danger : meta.color }}><Icon size={12} /></span>
       <div style={{ minWidth: 0 }}>
         <button className="row" style={{ border: 0, background: 'none', padding: 0, cursor: 'pointer', textAlign: 'left', width: '100%' }} onClick={() => setOpen(!open)} aria-expanded={open}>
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
@@ -422,7 +423,7 @@ function BuildsView() {
               const meta = FILE_STATUS[job.status] ?? { label: job.status, tone: '' };
               return (
                 <tr key={job.id} className="clickable" onClick={() => setOpen(job)}>
-                  <td><div className="row"><FileText size={15} color="#3370ff" /><div className="trace-primary ellipsis">{job.filename}</div></div></td>
+                  <td><div className="row"><FileText size={15} color={C.primary} /><div className="trace-primary ellipsis">{job.filename}</div></div></td>
                   <td><Link to={`/knowledge/${job.knowledge_base_id}`} onClick={(event) => event.stopPropagation()}>{job.knowledge_base_name}</Link></td>
                   <td><Tag tone="blue">{METHOD_LABEL[job.chunk_method as ChunkMethod] ?? job.chunk_method}</Tag></td>
                   <td><Tag tone={meta.tone}>{ACTIVE_STATUSES.has(job.status) ? <Spinner size={11} /> : null}{meta.label}</Tag></td>
@@ -449,7 +450,7 @@ function BuildsView() {
                 const warning = stage.status === 'warning';
                 return (
                   <div key={index} className="span-row">
-                    <span className="span-dot" style={{ background: ok ? '#12b76a' : active ? '#3370ff' : warning ? '#f79009' : '#f04438' }}>{ok ? <CheckCircle2 size={12} /> : active ? <Spinner size={12} /> : warning ? <AlertTriangle size={12} /> : <XCircle size={12} />}</span>
+                    <span className="span-dot" style={{ background: ok ? C.success : active ? C.primary : warning ? C.warning : C.danger }}>{ok ? <CheckCircle2 size={12} /> : active ? <Spinner size={12} /> : warning ? <AlertTriangle size={12} /> : <XCircle size={12} />}</span>
                     <div><strong style={{ fontSize: 13 }}>{STAGE_LABEL[stage.name] ?? stage.name}</strong><div className="faint" style={{ whiteSpace: 'pre-wrap' }}>{stage.detail}</div></div>
                     <span />
                   </div>

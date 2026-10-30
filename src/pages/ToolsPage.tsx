@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiFetch, errorMessage, formatDateTime, type ApiModelConfig, type ApiOpenRouterCatalog, type ApiOpenRouterCatalogModel, type ApiToolConfig } from '../api/client';
 import { ConfirmModal, Drawer, Empty, Field, Loading, Notice, Spinner, Switch, Tag, useToast } from '../components/ui';
+import { C } from '../theme';
 
 type Tab = 'models' | 'tools';
 
@@ -120,7 +121,7 @@ function ModelsView() {
                 <td><Tag>{MODEL_TYPES[model.model_type]}</Tag></td>
                 <td><div>{PROVIDERS[model.provider] ?? model.provider}</div><div className="faint mono">{model.model_name}</div></td>
                 <td className="faint">{config.input_price_per_million != null ? `入 ${String(config.input_price_per_million)} / 出 ${String(config.output_price_per_million ?? '—')} ${String(config.currency ?? 'USD')}` : '未配置'}</td>
-                <td><Tag tone={status.tone}>{status.label}</Tag>{model.last_error ? <div className="faint clamp-2" style={{ maxWidth: 220, color: '#b42318' }}>{model.last_error}</div> : <div className="faint">{formatDateTime(model.last_tested_at)}</div>}</td>
+                <td><Tag tone={status.tone}>{status.label}</Tag>{model.last_error ? <div className="faint clamp-2" style={{ maxWidth: 220, color: C.dangerText }}>{model.last_error}</div> : <div className="faint">{formatDateTime(model.last_tested_at)}</div>}</td>
                 <td><Switch on={model.is_enabled} label={`启用 ${model.display_name}`} onChange={async (value) => { try { await apiFetch(`/models/${model.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: value }) }); await load(); } catch (caught) { toast(errorMessage(caught), 'error'); } }} /></td>
                 <td>
                   <div className="row" style={{ gap: 2 }}>
@@ -357,7 +358,7 @@ function HttpToolsView() {
               <tr key={tool.id}>
                 <td><strong>{tool.name}</strong>{tool.config.side_effect ? <Tag tone="orange">有副作用</Tag> : null}<div className="faint clamp-2" style={{ maxWidth: 320 }}>{tool.description}</div></td>
                 <td className="mono faint" style={{ maxWidth: 320 }}><div className="ellipsis">{tool.config.method ?? 'GET'} {tool.config.url}</div></td>
-                <td><Tag tone={status.tone}>{status.label}</Tag>{tool.last_error ? <div className="faint clamp-2" style={{ maxWidth: 220, color: '#b42318' }}>{tool.last_error}</div> : null}</td>
+                <td><Tag tone={status.tone}>{status.label}</Tag>{tool.last_error ? <div className="faint clamp-2" style={{ maxWidth: 220, color: C.dangerText }}>{tool.last_error}</div> : null}</td>
                 <td><Switch on={tool.is_enabled} label={`启用 ${tool.name}`} onChange={async (value) => { try { await apiFetch(`/tools/${tool.id}`, { method: 'PATCH', body: JSON.stringify({ is_enabled: value }) }); await load(); } catch (caught) { toast(errorMessage(caught), 'error'); } }} /></td>
                 <td>
                   <div className="row" style={{ gap: 2 }}>

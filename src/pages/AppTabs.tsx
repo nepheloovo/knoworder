@@ -7,6 +7,7 @@ import { fdeApi, type AppShare, type AppVersion, type FDEApp } from '../api/fde'
 import { CHANNEL_LABEL, obsApi, type RunItem } from '../api/observability';
 import { EvalDesignModal } from '../components/EvalDesignModal';
 import { ConfirmModal, Drawer, Empty, Field, Loading, Modal, Notice, Spinner, Switch, Tag, formatCost, formatDuration, formatTime, formatTokens, useToast } from '../components/ui';
+import { C } from '../theme';
 
 /* ------------------------------ 发布渠道 ------------------------------ */
 
@@ -185,7 +186,7 @@ export function LogsTab({ app }: { app: FDEApp }) {
           <thead><tr><th>输入</th><th>渠道</th><th>版本</th><th>状态</th><th>步骤</th><th>耗时</th><th>Tokens</th><th>费用</th><th>时间</th></tr></thead>
           <tbody>{runs.map((run) => (
             <tr key={run.trace_id} className="clickable" onClick={() => navigate(`/observability?view=runs&trace=${run.trace_id}`)}>
-              <td style={{ maxWidth: 320 }}><div className="ellipsis">{run.query}</div>{run.error_message ? <div className="faint ellipsis" style={{ color: '#b42318' }}>{run.error_message}</div> : null}</td>
+              <td style={{ maxWidth: 320 }}><div className="ellipsis">{run.query}</div>{run.error_message ? <div className="faint ellipsis" style={{ color: C.dangerText }}>{run.error_message}</div> : null}</td>
               <td><Tag>{CHANNEL_LABEL[run.channel] ?? run.channel}</Tag></td>
               <td>{run.app_version ? `v${run.app_version}` : <span className="faint">草稿</span>}</td>
               <td>{run.status === 'success' ? <Tag tone="green">成功</Tag> : run.status === 'failed' ? <Tag tone="red">失败</Tag> : <Tag tone="blue">运行中</Tag>}{run.handoff ? <Tag tone="orange">转人工</Tag> : null}</td>

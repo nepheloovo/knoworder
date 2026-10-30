@@ -9,6 +9,7 @@ import { AppTile, Field, Loading, Modal, Notice, Spinner, Tag, useToast } from '
 import { AppConfigForm } from '../editors/AppConfigForm';
 import { appStatus, TYPE_META } from '../lib/apps';
 import { EvalTab, LogsTab, PublishTab, VersionsTab } from './AppTabs';
+import { C } from '../theme';
 
 const TABS = [
   { key: 'edit', name: '编排' },
@@ -111,16 +112,16 @@ export function AppEditorPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div className="topbar" style={{ flexWrap: 'wrap', height: 'auto', minHeight: 56 }}>
+      <div className="topbar editor-topbar">
         <button className="btn ghost sm icon" aria-label="返回应用列表" onClick={() => navigate('/apps')}><ArrowLeft size={16} /></button>
         <AppTile templateKey={manifest.template_key} type={manifest.type} size="sm" />
-        <div className="title row" style={{ gap: 6 }}>{manifest.name || '未命名应用'}<Tag tone={TYPE_META[manifest.type].tone}>{TYPE_META[manifest.type].name}</Tag></div>
-        <div className="tabs" style={{ marginLeft: 12 }}>
+        <div className="title row editor-title" style={{ gap: 6 }}><span className="ellipsis">{manifest.name || '未命名应用'}</span><Tag tone={TYPE_META[manifest.type].tone}>{TYPE_META[manifest.type].name}</Tag></div>
+        <div className="tabs editor-tabs">
           {TABS.map((item) => <button key={item.key} className={`tab ${tab === item.key ? 'active' : ''}`} onClick={() => setParams(item.key === 'edit' ? {} : { tab: item.key })}>{item.name}</button>)}
         </div>
         <span className="grow" />
-        <span className="faint row" style={{ gap: 4 }} title={saveError}>
-          {save === 'saving' ? <><Spinner size={13} />保存中</> : save === 'dirty' ? <><Cloud size={13} />有未保存修改</> : save === 'error' ? <><CloudOff size={13} color="#f04438" /><span style={{ color: '#b42318' }}>保存失败</span></> : <><Cloud size={13} />草稿已保存</>}
+        <span className="faint row editor-save" style={{ gap: 4 }} title={saveError}>
+          {save === 'saving' ? <><Spinner size={13} /><span className="editor-save-text">保存中</span></> : save === 'dirty' ? <><Cloud size={13} /><span className="editor-save-text">有未保存修改</span></> : save === 'error' ? <><CloudOff size={13} color={C.danger} /><span className="editor-save-text" style={{ color: C.dangerText }}>保存失败</span></> : <><Cloud size={13} /><span className="editor-save-text">草稿已保存</span></>}
         </span>
         <Tag tone={status.tone}>{status.label}</Tag>
         <button className="btn" disabled={!app.is_enabled || !app.published_version_id} onClick={() => navigate(`/chat/${app.id}`)}><Play size={14} />使用线上版</button>
@@ -201,7 +202,7 @@ function PublishModal({ open, app, onClose, onPublished }: { open: boolean; app:
           const stale = run && run.matches_draft === false;
           return (
             <div key={set.id} className="row" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', marginBottom: 6 }}>
-              {passed ? <CheckCircle2 size={16} color="#12b76a" /> : <AlertTriangle size={16} color="#f79009" />}
+              {passed ? <CheckCircle2 size={16} color={C.success} /> : <AlertTriangle size={16} color={C.warning} />}
               <span className="grow">{set.name}<span className="faint"> · {!run ? '尚未运行' : stale ? '草稿已修改，需重新运行' : `最近 ${run.passed_count}/${set.ready_count} 通过${set.needs_standard_count ? `（${set.needs_standard_count} 条待补标准未计入）` : ''}`}</span></span>
               {!passed ? <button className="btn sm" onClick={() => navigate(`/evaluation-sets?set=${set.id}`)}>去运行</button> : null}
             </div>
