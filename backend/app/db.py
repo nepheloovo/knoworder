@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
@@ -58,6 +59,8 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 
 async def init_db(target_engine: AsyncEngine | None = None) -> None:
     active_engine = target_engine or engine
+    if active_engine.dialect.name == "sqlite" and active_engine.url.database not in (None, "", ":memory:"):
+        Path(active_engine.url.database).parent.mkdir(parents=True, exist_ok=True)
     async with active_engine.begin() as connection:
         if active_engine.dialect.name == "postgresql":
             await connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))

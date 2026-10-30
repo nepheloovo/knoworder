@@ -50,14 +50,14 @@ export function EvalDesignModal({ open, apps, appId, onClose, onCreated }: {
 
   return (
     <Modal open={open} wide title="AI 设计评测集" icon={<Sparkles size={18} color="var(--purple)" />} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn primary" disabled={busy || !target || !rules?.has_model || (!picked.length && !directions.trim())} onClick={() => void submit()}>{busy ? <Spinner /> : <Sparkles size={15} />}{busy ? 'AI 正在设计用例…' : autoRun ? '生成并运行' : '生成评测集'}</button></>}>
+      footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn primary" disabled={busy || !target || !rules || (!picked.length && !directions.trim())} onClick={() => void submit()}>{busy ? <Spinner /> : <Sparkles size={15} />}{busy ? 'AI 正在设计用例…' : autoRun ? '生成并运行' : '生成评测集'}</button></>}>
       {apps && !appId ? (
         <Field label="评测哪个应用" required>
           <select className="select" value={target} onChange={(event) => setTarget(event.target.value)}>{apps.filter((app) => app.status !== 'archived').map((app) => <option key={app.id} value={app.id}>{app.name}</option>)}</select>
         </Field>
       ) : null}
       {!target ? <p className="faint">请先创建一个应用。</p> : !rules ? <Loading /> : <>
-        {!rules.has_model ? <div style={{ marginBottom: 12 }}><Notice tone="warn" title="应用还没有选择对话模型">评测设计会使用应用的对话模型，请先在应用编排中选择。</Notice></div> : null}
+        {!rules.has_model ? <div style={{ marginBottom: 12 }}><Notice tone="info" title="应用还没有选择对话模型">将按评测规则模板生成用例（标签为「规则模板」）；在应用编排中选择对话模型后，AI 会结合业务方向设计得更贴切。</Notice></div> : null}
         <Field label="评测规则" hint="已按应用场景勾选推荐规则">
           <div className="grid c2" style={{ gap: 8 }}>
             {rules.rules.map((rule) => {

@@ -297,3 +297,11 @@ async def test_member_role_updates_and_removal_are_audited(client: AsyncClient) 
     assert all(item["id"] != user_id for item in (await client.get("/api/v1/auth/users", headers=ADMIN)).json())
     removed_events = await client.get("/api/v1/audit-events?action=member.removed", headers=ADMIN)
     assert any(item["resource_id"] == user_id for item in removed_events.json())
+
+
+async def test_invalid_manifest_is_a_422_with_issues(client: AsyncClient) -> None:
+    created = await client.post("/api/v1/fde/apps", headers=ADMIN, json={"manifest": {"name": "", "template_key": "Bad Key"}})
+    assert created.status_code == 422, created.text
+    detail = created.json()["detail"]
+    assert detail["message"] == "应用配置不符合协议"
+    assert {"name", "template_key", "system_prompt"} <= {issue["path"] for issue in detail["issues"]}

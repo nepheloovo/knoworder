@@ -7,6 +7,9 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 默认路径写成 ./backend/... 是相对仓库根目录的；统一按仓库根目录解析，从哪个目录启动都指向同一份数据
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -61,6 +64,19 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @field_validator("database_url")
+    @classmethod
+    def anchor_sqlite_path(cls, value: str) -> str:
+        prefix, sep, path = value.partition(":///")
+        if not prefix.startswith("sqlite") or not sep or not path or path.startswith(":memory:") or Path(path).is_absolute():
+            return value
+        return f"{prefix}:///{(PROJECT_ROOT / path).resolve()}"
+
+    @field_validator("local_storage_path")
+    @classmethod
+    def anchor_storage_path(cls, value: Path) -> Path:
+        return value if value.is_absolute() else (PROJECT_ROOT / value).resolve()
 
     def assert_safe_for_production(self) -> None:
         if self.env != "production":

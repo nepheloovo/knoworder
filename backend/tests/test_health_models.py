@@ -104,3 +104,24 @@ async def test_non_admin_cannot_manage_models(client: AsyncClient) -> None:
     response = await client.get("/api/v1/models", headers={"X-Demo-Role": "user"})
     assert response.status_code == 403
 
+
+
+def test_relative_data_paths_resolve_from_project_root(monkeypatch) -> None:
+    from app.config import PROJECT_ROOT, Settings
+
+    monkeypatch.setenv("APP_DATABASE_URL", "sqlite+aiosqlite:///./backend/data/knowledge_hub.db")
+    monkeypatch.setenv("APP_LOCAL_STORAGE_PATH", "./backend/data/uploads")
+    settings = Settings()
+    assert settings.database_url == f"sqlite+aiosqlite:///{PROJECT_ROOT / 'backend/data/knowledge_hub.db'}"
+    assert settings.local_storage_path == PROJECT_ROOT / "backend/data/uploads"
+    monkeypatch.setenv("APP_DATABASE_URL", "postgresql+asyncpg://rag:rag@127.0.0.1/rag")
+    assert Settings().database_url == "postgresql+asyncpg://rag:rag@127.0.0.1/rag"
+
+
+async def test_init_db_creates_the_sqlite_directory(tmp_path) -> None:
+    from app.db import build_engine, init_db
+
+    engine = build_engine(f"sqlite+aiosqlite:///{tmp_path / 'nested' / 'dir' / 'app.db'}")
+    await init_db(engine)
+    await engine.dispose()
+    assert (tmp_path / "nested" / "dir" / "app.db").exists()

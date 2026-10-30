@@ -72,6 +72,7 @@ async def test_release_is_atomic_and_reuses_unchanged_version(client: AsyncClien
     await client.post(f"/api/v1/evaluation-sets/{suite_id}/run", headers=ADMIN)
     released = await client.post(f"/api/v1/fde/apps/{app_id}/release", headers=ADMIN, json={"release_notes": "v1"})
     assert released.status_code == 200, released.text
+    assert released.json()["published_version"]["version"] == 1
     again = await client.post(f"/api/v1/fde/apps/{app_id}/release", headers=ADMIN, json={"release_notes": "无改动"})
     assert again.status_code == 200
     assert [item["version"] for item in again.json()["versions"]] == [1]
