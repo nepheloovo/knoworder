@@ -47,7 +47,7 @@ export function Shell({ children }: PropsWithChildren) {
   return (
     <div className="shell">
       <nav className="nav" aria-label="主导航">
-        <div className="nav-logo" title="知枢 AI 应用中台">枢</div>
+        <div className="nav-logo" title="知序 KnowOrder · AI 应用中台">序</div>
         {NAV.filter((item) => item.roles.includes(role)).map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={() => `nav-item ${pathname.startsWith(to) || (to === '/workbench' && pathname.startsWith('/chat/')) ? 'active' : ''}`}>
             <Icon size={20} aria-hidden="true" /><span>{label}</span>

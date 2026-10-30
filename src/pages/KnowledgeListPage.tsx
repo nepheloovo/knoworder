@@ -6,8 +6,9 @@ import { fdeApi, type FDEApp } from '../api/fde';
 import { useAuth } from '../auth';
 import { Empty, Field, Loading, Modal, Notice, Spinner, Tag, formatTime, useToast } from '../components/ui';
 import { modelsOf } from '../lib/knowledge';
+import { C } from '../theme';
 
-const COLORS = ['#3370ff', '#12b76a', '#7a5af8', '#f79009', '#dd2590', '#0e9384'];
+const COLORS = [C.primary, C.success, C.violet, C.warning, C.rose, C.teal];
 
 export function KnowledgeListPage() {
   const navigate = useNavigate();

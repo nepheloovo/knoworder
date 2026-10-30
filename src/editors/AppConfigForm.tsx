@@ -5,6 +5,7 @@ import type { ApiKnowledgeBase, ApiModelOption, ApiToolConfig } from '../api/cli
 import type { AppManifest, AppTemplate, InputField } from '../api/fde';
 import { Field, Modal, Notice, Slider, Switch, Tag } from '../components/ui';
 import { retrievalConfig, SCENES, TYPE_META, withRetrievalConfig } from '../lib/apps';
+import { C } from '../theme';
 
 type Patch = (patch: Partial<AppManifest>) => void;
 
@@ -198,7 +199,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
             const kb = kbById.get(id);
             return (
               <div key={id} className="row" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
-                <span className="avatar-tile sm" style={{ background: '#12b76a' }}><Database size={14} /></span>
+                <span className="avatar-tile sm" style={{ background: C.success }}><Database size={14} /></span>
                 <span className="grow">{kb ? <Link to={`/knowledge/${id}`}>{kb.name}</Link> : '已删除的知识库'}<span className="faint"> · {kb?.chunk_count ?? 0} 块</span></span>
                 <button type="button" className="btn ghost sm icon" aria-label="移除知识库" onClick={() => patch({ knowledge_base_ids: manifest.knowledge_base_ids.filter((item) => item !== id) })}><X size={14} /></button>
               </div>
@@ -228,7 +229,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
               const tool = tools.find((item) => item.id === reference.tool_id);
               return (
                 <div key={reference.tool_id} className="row" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
-                  <span className="avatar-tile sm" style={{ background: '#3370ff' }}><Wrench size={14} /></span>
+                  <span className="avatar-tile sm" style={{ background: C.primary }}><Wrench size={14} /></span>
                   <div className="grow" style={{ minWidth: 0 }}>
                     <div className="row" style={{ gap: 6 }}><strong style={{ fontSize: 13 }}>{tool?.name ?? '已删除的工具'}</strong><Tag>HTTP</Tag>{tool?.config.side_effect ? <Tag tone="orange">有副作用</Tag> : null}{tool && !tool.is_enabled ? <Tag tone="red">已停用</Tag> : null}</div>
                     <div className="faint ellipsis">{tool?.description}</div>
@@ -238,7 +239,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
               );
             })}
             <div className="row" style={{ border: '1px dashed var(--border-strong)', borderRadius: 10, padding: '10px 12px', background: 'var(--orange-50)' }}>
-              <span className="avatar-tile sm" style={{ background: '#f79009' }}><Headset size={14} /></span>
+              <span className="avatar-tile sm" style={{ background: C.warning }}><Headset size={14} /></span>
               <div className="grow"><strong style={{ fontSize: 13 }}>转人工</strong> <Tag tone="orange">内置</Tag><div className="faint">用户要求人工、投诉赔偿或无法解决时，Agent 可调用转接</div></div>
               <Switch on={manifest.guardrails.human_handoff} onChange={(value) => patch({ guardrails: { ...manifest.guardrails, human_handoff: value } })} label="转人工" />
             </div>
@@ -287,7 +288,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
             const on = manifest.knowledge_base_ids.includes(kb.id);
             return (
               <button type="button" key={kb.id} className={`method-card ${on ? 'active' : ''}`} style={{ alignItems: 'center' }} onClick={() => patch({ knowledge_base_ids: on ? manifest.knowledge_base_ids.filter((item) => item !== kb.id) : [...manifest.knowledge_base_ids, kb.id] })}>
-                <span className="avatar-tile sm" style={{ background: '#12b76a' }}><Database size={14} /></span>
+                <span className="avatar-tile sm" style={{ background: C.success }}><Database size={14} /></span>
                 <div className="grow"><h4>{kb.name}</h4><p>{kb.description || '暂无简介'} · {kb.file_count} 个文件 · {kb.chunk_count} 块{kb.embedding_model_id ? '' : ' · 仅支持全文检索'}</p></div>
                 {on ? <Tag tone="blue">已选</Tag> : null}
               </button>
@@ -314,7 +315,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
             const on = externalTools.some((item) => item.tool_id === tool.id);
             return (
               <button type="button" key={tool.id} disabled={!tool.is_enabled} className={`method-card ${on ? 'active' : ''}`} onClick={() => toggleTool(tool)}>
-                <span className="avatar-tile sm" style={{ background: '#3370ff' }}><Wrench size={14} /></span>
+                <span className="avatar-tile sm" style={{ background: C.primary }}><Wrench size={14} /></span>
                 <div className="grow"><h4>{tool.name}<Tag>{tool.config.method ?? 'HTTP'}</Tag>{tool.connection_status === 'connected' ? <Tag tone="green">已连通</Tag> : tool.connection_status === 'error' ? <Tag tone="red">测试失败</Tag> : null}</h4><p>{tool.description}</p></div>
                 {on ? <Tag tone="blue">已添加</Tag> : null}
               </button>

@@ -6,6 +6,7 @@ import { fdeApi, type FDEApp } from '../api/fde';
 import { isManager, useAuth } from '../auth';
 import { AppTile, Empty, Loading, Notice, Tag } from '../components/ui';
 import { sceneOf, SCENES, TYPE_META } from '../lib/apps';
+import { C } from '../theme';
 
 const STAR_KEY = 'zs-starred-apps';
 
@@ -31,7 +32,7 @@ export function WorkbenchPage() {
   const toggleStar = (id: string) => setStarred((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
 
   return (
-    <div className="page" style={{ background: 'linear-gradient(180deg, #eef3ff 0, #fff 220px)' }}>
+    <div className="page" style={{ background: 'linear-gradient(180deg, var(--primary-50) 0, var(--surface) 220px)' }}>
       <div style={{ maxWidth: 1240, margin: '0 auto' }}>
         <h1 style={{ fontSize: 24, fontWeight: 600, marginTop: 8 }}>{greeting()}，{me?.user?.display_name ?? ''}</h1>
         <p className="muted" style={{ marginTop: 6 }}>选择一个业务应用开始工作。</p>
@@ -54,7 +55,7 @@ export function WorkbenchPage() {
           </div>
 
           {starred.some((id) => apps.some((app) => app.id === id)) ? <>
-            <div className="section-title"><Star size={15} color="#fdb022" fill="#fdb022" />我的收藏</div>
+            <div className="section-title"><Star size={15} color={C.star} fill={C.star} />我的收藏</div>
             <div className="row wrap">{apps.filter((app) => starred.includes(app.id)).map((app) => <button key={app.id} className="btn" onClick={() => navigate(`/chat/${app.id}`)}><AppTile templateKey={app.manifest.template_key} type={app.manifest.type} size="sm" />{app.name}</button>)}</div>
           </> : null}
 
@@ -75,7 +76,7 @@ export function WorkbenchPage() {
                         <div className="row" style={{ marginTop: 4 }}><Tag tone={TYPE_META[app.manifest.type].tone}>{TYPE_META[app.manifest.type].name}</Tag></div>
                       </div>
                       <button className="btn ghost sm icon" aria-label={starred.includes(app.id) ? '取消收藏' : '收藏'} onClick={(event) => { event.stopPropagation(); toggleStar(app.id); }}>
-                        <Star size={16} fill={starred.includes(app.id) ? '#fdb022' : 'none'} color={starred.includes(app.id) ? '#fdb022' : 'currentColor'} />
+                        <Star size={16} fill={starred.includes(app.id) ? C.star : 'none'} color={starred.includes(app.id) ? C.star : 'currentColor'} />
                       </button>
                     </div>
                     <p className="muted clamp-2" style={{ fontSize: 13, marginTop: 10, minHeight: 42 }}>{app.description}</p>
@@ -90,7 +91,7 @@ export function WorkbenchPage() {
           )}
           {isManager(me?.role) ? (
             <button className="card pad hover row" style={{ marginTop: 24, width: '100%', textAlign: 'left' }} onClick={() => navigate('/apps?create=1')}>
-              <Lightbulb size={20} color="#f79009" /><div className="grow"><strong>没有合适的应用？</strong><div className="faint">描述业务需求，AI 帮你生成第一版</div></div><ArrowRight size={16} className="muted" />
+              <Lightbulb size={20} color={C.warning} /><div className="grow"><strong>没有合适的应用？</strong><div className="faint">描述业务需求，AI 帮你生成第一版</div></div><ArrowRight size={16} className="muted" />
             </button>
           ) : null}
         </> : null}

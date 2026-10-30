@@ -3,21 +3,22 @@ import {
   ShieldCheck, Sparkles, TriangleAlert, X, type LucideIcon,
 } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type PropsWithChildren, type ReactNode } from 'react';
+import { C } from '../theme';
 
 /* -------- 应用图标：按模板 / 类型选择，保证同类应用在各页面一致 -------- */
 
 const TEMPLATE_ICON: Record<string, [LucideIcon, string]> = {
-  qa: [BookOpen, '#7a5af8'],
-  content: [PenLine, '#dd2590'],
-  report: [NotebookPen, '#3370ff'],
-  review: [ShieldCheck, '#f79009'],
-  customer_service: [Headset, '#12b76a'],
-  marketing: [Megaphone, '#dd2590'],
+  qa: [BookOpen, C.violet],
+  content: [PenLine, C.rose],
+  report: [NotebookPen, C.primary],
+  review: [ShieldCheck, C.warning],
+  customer_service: [Headset, C.success],
+  marketing: [Megaphone, C.rose],
 };
 
 export function appVisual(templateKey: string | undefined, type?: string): [LucideIcon, string] {
   if (templateKey && TEMPLATE_ICON[templateKey]) return TEMPLATE_ICON[templateKey];
-  return type === 'agent' ? [Bot, '#0e9384'] : [MessageSquare, '#3370ff'];
+  return type === 'agent' ? [Bot, C.teal] : [MessageSquare, C.primary];
 }
 
 export function AppTile({ templateKey, type, size = 'md' }: { templateKey?: string; type?: string; size?: 'sm' | 'md' | 'lg' }) {

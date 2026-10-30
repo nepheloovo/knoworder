@@ -1,5 +1,6 @@
 import type { ApiModelOption } from '../api/client';
 import type { AppManifest, AppTemplate, FDEApp } from '../api/fde';
+import { C } from '../theme';
 
 export type AppType = AppManifest['type'];
 
@@ -10,15 +11,15 @@ export const TYPE_META: Record<AppType | 'chatflow', { name: string; desc: strin
 };
 
 export const SCENES: Record<string, { name: string; color: string }> = {
-  report: { name: '报告撰写', color: '#3370ff' },
-  customer_service: { name: '智能客服', color: '#12b76a' },
-  review: { name: '制度与合同审校', color: '#f79009' },
-  content: { name: '营销内容', color: '#dd2590' },
-  qa: { name: '知识问答', color: '#7a5af8' },
+  report: { name: '报告撰写', color: C.primary },
+  customer_service: { name: '智能客服', color: C.success },
+  review: { name: '制度与合同审校', color: C.warning },
+  content: { name: '营销内容', color: C.rose },
+  qa: { name: '知识问答', color: C.violet },
 };
 
 export function sceneOf(templateKey: string) {
-  return SCENES[templateKey] ?? { name: '其他', color: '#667085' };
+  return SCENES[templateKey] ?? { name: '其他', color: C.slate };
 }
 
 export function appStatus(app: FDEApp): { label: string; tone: string } {

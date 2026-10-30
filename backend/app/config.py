@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     env: Literal["development", "test", "production"] = "development"
-    app_name: str = "知枢 FDE AI 应用中台"
+    app_name: str = "知序 KnowOrder AI 应用中台"
     api_prefix: str = "/api/v1"
     bootstrap_admin_email: str = "admin@fde.local"
     bootstrap_admin_password: str = "fde-dev-admin"

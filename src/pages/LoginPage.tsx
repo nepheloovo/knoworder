@@ -35,8 +35,8 @@ export function LoginPage() {
     <div className="login-shell">
       <form className="card login-card" onSubmit={(event) => void submit(event)}>
         <div className="row" style={{ marginBottom: 20 }}>
-          <span className="nav-logo" style={{ margin: 0 }}>枢</span>
-          <div><h1 style={{ fontSize: 20 }}>知枢 AI 应用中台</h1><p className="faint">知识库 · Agent · 可观测 · 评测</p></div>
+          <span className="nav-logo" style={{ margin: 0 }}>序</span>
+          <div><h1 style={{ fontSize: 20 }}>知序 KnowOrder</h1><p className="faint">让企业知识井然有序 · 知识库 · Agent · 评测</p></div>
         </div>
         {error ? <div style={{ marginBottom: 14 }}><Notice tone="error" title="登录失败">{error}</Notice></div> : null}
         <Field label="邮箱"><input className="input" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required /></Field>
