@@ -12,6 +12,7 @@ import { KnowledgeDetailPage } from './pages/KnowledgeDetailPage';
 import { KnowledgeListPage } from './pages/KnowledgeListPage';
 import { LoginPage } from './pages/LoginPage';
 import { ObservabilityPage } from './pages/ObservabilityPage';
+import { InsightsPage } from './pages/InsightsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SharePage } from './pages/SharePage';
 import { ToolsPage } from './pages/ToolsPage';
@@ -38,6 +39,7 @@ export default function App() {
       <Route path="/knowledge" element={<Protected><KnowledgeListPage /></Protected>} />
       <Route path="/knowledge/:kbId/import" element={<Protected><ImportWizardPage /></Protected>} />
       <Route path="/knowledge/:kbId/*" element={<Protected><KnowledgeDetailPage /></Protected>} />
+      <Route path="/insights" element={<Protected><InsightsPage /></Protected>} />
       <Route path="/observability" element={<Protected><ObservabilityPage /></Protected>} />
       <Route path="/evaluation-sets" element={<Protected><EvaluationSetsPage /></Protected>} />
       <Route path="/tools" element={<Protected><ToolsPage /></Protected>} />
