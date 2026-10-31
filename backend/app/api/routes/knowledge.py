@@ -629,6 +629,10 @@ async def update_chunk(
     if null_fields:
         raise HTTPException(status_code=422, detail=f"Fields cannot be null: {', '.join(null_fields)}")
     metadata = dict(chunk.metadata_json or {})
+    # 标记为人工编辑并留存首次编辑前的原文：重新切块时据此保留这一块，并找到它在新切块中的位置
+    if not metadata.get("manual_edit"):
+        metadata["original_content"] = chunk.content
+    metadata["manual_edit"] = True
     for key in ("keywords", "qa_pairs"):
         if key in values:
             metadata[key] = values.pop(key) or []
@@ -676,6 +680,7 @@ class RechunkRequest(BaseModel):
     """重新处理单个文件；传入 chunk_config 时按新的切块方式重建该文件的索引。"""
 
     chunk_config: dict[str, Any] | None = None
+    discard_manual_edits: bool = False
 
 
 @router.post("/{knowledge_base_id}/files/{file_id}/retry", response_model=ImportJobResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -710,6 +715,10 @@ async def retry_file(
     )
     if active_job is not None:
         raise HTTPException(status_code=409, detail="File already has an active import job")
+    if payload and payload.discard_manual_edits:
+        for chunk in await session.scalars(select(DocumentChunk).where(DocumentChunk.file_id == file.id)):
+            if (chunk.metadata_json or {}).get("manual_edit"):
+                chunk.metadata_json = {key: value for key, value in chunk.metadata_json.items() if key not in {"manual_edit", "original_content"}}
     job = ImportJob(file_id=file.id, status=JobStatus.QUEUED, progress=0, current_stage="queued")
     session.add(job)
     await session.commit()

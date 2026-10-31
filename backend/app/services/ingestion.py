@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from difflib import SequenceMatcher
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select, text, update
@@ -86,6 +88,43 @@ def _finish_active_stages(
         {**item, "status": status} if item.get("status") == "active" else item
         for item in stage_details
     ]
+
+
+def _normalized(text: str) -> str:
+    return "".join(text.split())
+
+
+def merge_manual_edits(documents: list[Any], manual_chunks: list[DocumentChunk]) -> list[Any]:
+    """重新切块时保留人工编辑过的分块。
+
+    新切出的块如果与某个人工分块编辑前的原文基本一致（相似度 ≥ 0.8），由该人工分块顶替它的位置；
+    找不到对应新块的人工分块追加在末尾，内容不会丢。返回的序列里混合了新 Document 和保留的 DocumentChunk。
+    """
+    merged: list[Any] = list(documents)
+    taken: set[int] = set()
+    leftovers: list[DocumentChunk] = []
+    for chunk in sorted(manual_chunks, key=lambda item: item.ordinal):
+        original = _normalized(str((chunk.metadata_json or {}).get("original_content") or chunk.content))
+        best_index, best_ratio = -1, 0.8
+        for index, document in enumerate(documents):
+            if index in taken:
+                continue
+            candidate = _normalized(document.page_content)
+            if candidate == original:
+                best_index = index
+                break
+            matcher = SequenceMatcher(None, original, candidate, autojunk=False)
+            if matcher.real_quick_ratio() < best_ratio or matcher.quick_ratio() < best_ratio:
+                continue
+            ratio = matcher.ratio()
+            if ratio >= best_ratio:
+                best_index, best_ratio = index, ratio
+        if best_index >= 0:
+            taken.add(best_index)
+            merged[best_index] = chunk
+        else:
+            leftovers.append(chunk)
+    return merged + leftovers
 
 
 async def _update_job(
@@ -308,7 +347,19 @@ async def process_import_job(
             detail=f"调用 {embedding_model.display_name} 生成向量",
         )
         gateway = build_gateway(embedding_model)
-        texts = [build_embedding_text(chunk_index_text(document.page_content, document.metadata), document_metadata) for document in documents]
+        manual_chunks = [
+            chunk
+            for chunk in await session.scalars(select(DocumentChunk).where(DocumentChunk.file_id == file.id))
+            if (chunk.metadata_json or {}).get("manual_edit")
+        ]
+        documents = merge_manual_edits(documents, manual_chunks)
+        texts = [
+            build_embedding_text(
+                chunk_index_text(item.content, item.metadata_json) if isinstance(item, DocumentChunk) else chunk_index_text(item.page_content, item.metadata),
+                document_metadata,
+            )
+            for item in documents
+        ]
         vectors: list[list[float]] = []
         batch_size = max(1, get_settings().embedding_batch_size)
         for start in range(0, len(texts), batch_size):
@@ -325,8 +376,14 @@ async def process_import_job(
             raise ValueError("Embedding dimension changed; rebuild is required with a compatible model and index version")
         knowledge_base.embedding_dimension = dimension
 
-        await session.execute(delete(DocumentChunk).where(DocumentChunk.file_id == file.id))
+        kept_ids = [chunk.id for chunk in manual_chunks]
+        await session.execute(delete(DocumentChunk).where(DocumentChunk.file_id == file.id, DocumentChunk.id.not_in(kept_ids)))
         for ordinal, (document, vector) in enumerate(zip(documents, vectors, strict=True), start=1):
+            if isinstance(document, DocumentChunk):
+                document.ordinal = ordinal
+                document.embedding = vector
+                document.metadata_json = {**(document.metadata_json or {}), "document_metadata": document_metadata}
+                continue
             session.add(
                 DocumentChunk(
                     knowledge_base_id=knowledge_base.id,
@@ -348,7 +405,10 @@ async def process_import_job(
         job.current_stage = "completed"
         job.stage_details = [
             *_finish_active_stages(job.stage_details, status="success"),
-            _stage("completed", "success", f"生成 {len(documents)} 个分块并完成向量索引"),
+            _stage(
+                "completed", "success",
+                f"生成 {len(documents)} 个分块并完成向量索引" + (f"，保留 {len(manual_chunks)} 个人工编辑的分块" if manual_chunks else ""),
+            ),
         ]
         job.finished_at = datetime.now(UTC)
         job.error_message = None

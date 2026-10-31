@@ -1,6 +1,6 @@
 import { ArrowLeft, Blocks, Check, CheckCircle2, ChevronDown, ChevronRight, FileSpreadsheet, FileText, Globe, Plug, Type, UploadCloud, X, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   API_BASE_URL, apiFetch, errorMessage, type ApiChunkConfig, type ApiChunkPreview, type ApiImportJob, type ApiKnowledgeBase, type ApiKnowledgeFile,
 } from '../api/client';
@@ -39,10 +39,13 @@ export function ImportWizardPage() {
   const toast = useToast();
   const [kb, setKb] = useState<ApiKnowledgeBase | null>(null);
   const [step, setStep] = useState(1);
-  const [source, setSource] = useState<Source>('file');
+  // 看板「补充知识」带着未解决的问题过来：直接进入自定义文本，问题作标题，只需补答案
+  const [searchParams] = useSearchParams();
+  const gapQuestion = searchParams.get('question')?.trim() ?? '';
+  const [source, setSource] = useState<Source>(gapQuestion ? 'text' : 'file');
   const [items, setItems] = useState<Pending[]>([]);
   const [activeId, setActiveId] = useState('');
-  const [text, setText] = useState({ title: '', content: '' });
+  const [text, setText] = useState(gapQuestion ? { title: gapQuestion.slice(0, 80), content: `问：${gapQuestion}\n\n答：` } : { title: '', content: '' });
   const [web, setWeb] = useState({ url: '', title: '', method: 'heading' as ChunkMethod });
   const [previewing, setPreviewing] = useState(false);
   const [uploads, setUploads] = useState<Upload[]>([]);

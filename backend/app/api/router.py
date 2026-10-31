@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .routes import apps, audit, auth, chat, evaluations, fde, health, knowledge, logs, model_options, models, observability, retrieval, tools
+from .routes import apps, audit, auth, chat, evaluations, fde, health, insights, knowledge, logs, model_options, models, observability, retrieval, tools
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -19,3 +19,4 @@ api_router.include_router(evaluations.router, prefix="/evaluation-sets", tags=["
 api_router.include_router(tools.router, prefix="/tools", tags=["tools"])
 
 api_router.include_router(observability.router, prefix="/observability", tags=["observability"])
+api_router.include_router(insights.router, prefix="/insights", tags=["insights"])

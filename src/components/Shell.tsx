@@ -1,4 +1,4 @@
-import { Activity, Blocks, ClipboardCheck, Database, LayoutGrid, LogOut, Plug, Settings, type LucideIcon } from 'lucide-react';
+import { Activity, BarChart3, Blocks, ClipboardCheck, Database, LayoutGrid, LogOut, Plug, Settings, type LucideIcon } from 'lucide-react';
 import { useEffect, useRef, useState, type PropsWithChildren } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { isManager, useAuth } from '../auth';
@@ -13,6 +13,7 @@ export const NAV: NavItem[] = [
   { to: '/workbench', label: '工作台', icon: LayoutGrid, roles: ALL },
   { to: '/apps', label: '应用', icon: Blocks, roles: STAFF },
   { to: '/knowledge', label: '知识库', icon: Database, roles: STAFF },
+  { to: '/insights', label: '看板', icon: BarChart3, roles: STAFF },
   { to: '/observability', label: '可观测', icon: Activity, roles: STAFF },
   { to: '/evaluation-sets', label: '评测集', icon: ClipboardCheck, roles: STAFF },
   { to: '/tools', label: '集成', icon: Plug, roles: ['admin'] },

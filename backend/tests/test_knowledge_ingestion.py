@@ -346,3 +346,32 @@ async def test_web_import_rejects_private_network_urls(client: AsyncClient) -> N
     )
     assert response.status_code == 422, response.text
     assert "内网或保留地址" in response.json()["detail"]
+
+
+async def test_rechunk_keeps_manual_edits_unless_discarded(client: AsyncClient) -> None:
+    embedding_id = await _create_mock_embedding(client)
+    created = await client.post(
+        "/api/v1/knowledge-bases", headers=MANAGER_HEADERS,
+        json={"name": "制度库", "embedding_model_id": embedding_id, "chunk_size": 100, "chunk_overlap": 0},
+    )
+    kb_id = created.json()["id"]
+    content = "# 差旅\n\n员工出差前需要提交审批，住宿标准按城市分级。\n\n# 报销\n\n报销需提供发票和行程单，30 日内提交。"
+    uploaded = await client.post(f"/api/v1/knowledge-bases/{kb_id}/files", headers=MANAGER_HEADERS, files={"upload": ("policy.md", content.encode(), "text/markdown")})
+    file_id = uploaded.json()["file"]["id"]
+    chunks = (await client.get(f"/api/v1/knowledge-bases/{kb_id}/chunks", headers=MANAGER_HEADERS)).json()
+    target = next(chunk for chunk in chunks if "报销" in chunk["content"])
+    edited = await client.patch(f"/api/v1/knowledge-bases/{kb_id}/chunks/{target['id']}", headers=MANAGER_HEADERS, json={"content": "报销需提供发票和行程单，15 日内提交（人工修订）。"})
+    assert edited.json()["metadata_json"]["manual_edit"] is True
+
+    rechunked = await client.post(f"/api/v1/knowledge-bases/{kb_id}/files/{file_id}/retry", headers=MANAGER_HEADERS, json={"chunk_config": {"method": "recursive", "chunk_size": 100, "chunk_overlap": 0}})
+    assert rechunked.status_code == 202, rechunked.text
+    after = (await client.get(f"/api/v1/knowledge-bases/{kb_id}/chunks", headers=MANAGER_HEADERS)).json()
+    contents = [chunk["content"] for chunk in after]
+    assert any("人工修订" in item for item in contents)
+    assert not any("30 日内" in item for item in contents)  # 对应的新切块被人工版本顶替，没有重复
+    assert sorted(chunk["ordinal"] for chunk in after) == list(range(1, len(after) + 1))
+
+    discarded = await client.post(f"/api/v1/knowledge-bases/{kb_id}/files/{file_id}/retry", headers=MANAGER_HEADERS, json={"chunk_config": {"method": "recursive", "chunk_size": 100, "chunk_overlap": 0}, "discard_manual_edits": True})
+    assert discarded.status_code == 202, discarded.text
+    final = [chunk["content"] for chunk in (await client.get(f"/api/v1/knowledge-bases/{kb_id}/chunks", headers=MANAGER_HEADERS)).json()]
+    assert not any("人工修订" in item for item in final) and any("30 日内" in item for item in final)
