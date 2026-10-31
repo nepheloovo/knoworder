@@ -1,6 +1,6 @@
 import { ArrowLeft, MessageSquarePlus, Pencil } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { errorMessage } from '../api/client';
 import { fdeApi, type Citation, type FDEApp } from '../api/fde';
 import { isManager, useAuth } from '../auth';
@@ -23,6 +23,13 @@ export function ChatRunPage() {
 
   const loadHistory = useCallback(() => fdeApi.myConversations(appId).then((list) => { setHistory(list); setHistoryError(''); }).catch((caught) => setHistoryError(errorMessage(caught))), [appId]);
   useEffect(() => { fdeApi.get(appId).then(setApp).catch((caught) => setError(errorMessage(caught))); void loadHistory(); }, [appId, loadHistory]);
+  // 从工作台「最近使用」进入时直接打开那次对话
+  const [searchParams] = useSearchParams();
+  const openConversation = searchParams.get('conversation');
+  useEffect(() => {
+    if (!openConversation) return;
+    fdeApi.conversation(openConversation).then((value) => { setCurrent(value); setActiveId(openConversation); setSession((count) => count + 1); }).catch((caught) => setHistoryError(errorMessage(caught)));
+  }, [openConversation]);
 
   if (error) return <div className="page"><Notice tone="error" title="无法打开应用">{error}</Notice></div>;
   if (!app) return <Loading />;

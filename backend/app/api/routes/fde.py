@@ -18,6 +18,7 @@ from ...models import (
     AppShare,
     AuditEvent,
     Conversation,
+    DocumentChunk,
     EvaluationCase,
     EvaluationRun,
     EvaluationSuite,
@@ -236,6 +237,38 @@ async def create_app(payload: AppCreateRequest, context: AuthContext = Depends(r
     await _audit(session, context, "application.created", app.id, {"template": manifest.template_key})
     await session.commit()
     return _app_payload(await _app(session, app.id, context.workspace_id))
+
+
+@router.get("/workbench")
+async def workbench(context: AuthContext = Depends(get_auth_context), session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
+    """工作台右栏：当前用户最近使用的对话，以及本业务空间本月的业务沉淀（不含编排调试运行）。"""
+    now = datetime.now(UTC)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    live = (QueryLog.workspace_id == context.workspace_id, QueryLog.started_at >= month_start, QueryLog.channel != "debug")
+    runs, apps_used = (await session.execute(select(func.count(QueryLog.id), func.count(func.distinct(QueryLog.app_id))).where(*live))).one()
+    users = await session.scalar(
+        select(func.count(func.distinct(Conversation.user_id))).join(QueryLog, QueryLog.conversation_id == Conversation.id).where(*live, Conversation.user_id.is_not(None))
+    ) or 0
+    chunks = await session.scalar(
+        select(func.count(DocumentChunk.id)).join(KnowledgeBase, KnowledgeBase.id == DocumentChunk.knowledge_base_id)
+        .where(KnowledgeBase.workspace_id == context.workspace_id, DocumentChunk.created_at >= month_start)
+    ) or 0
+    recent: list[dict[str, Any]] = []
+    if context.user_id:
+        rows = (
+            await session.execute(
+                select(Conversation.id, Conversation.title, Conversation.app_id, Conversation.updated_at, QAApp.name, QAApp.scenario_type)
+                .join(QAApp, QAApp.id == Conversation.app_id)
+                .where(Conversation.workspace_id == context.workspace_id, Conversation.user_id == context.user_id)
+                .order_by(Conversation.updated_at.desc())
+                .limit(6)
+            )
+        ).all()
+        recent = [
+            {"conversation_id": row.id, "title": row.title, "app_id": row.app_id, "app_name": row.name, "template_key": row.scenario_type, "updated_at": row.updated_at}
+            for row in rows
+        ]
+    return {"month": {"runs": runs, "users": users, "apps": apps_used, "new_chunks": chunks}, "recent": recent}
 
 
 @router.get("/apps")

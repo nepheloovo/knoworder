@@ -635,3 +635,8 @@ code, .mono { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12p
   .grid.c2, .grid.c3, .grid.c4 { grid-template-columns: 1fr; }
   .page-head { flex-wrap: wrap; }
 }
+
+/* 工作台：宽屏右侧放「最近使用 / 本月业务沉淀」，窄屏排到下方 */
+.workbench-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
+.workbench-aside { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+@media (max-width: 1100px) { .workbench-layout { grid-template-columns: minmax(0, 1fr); } }

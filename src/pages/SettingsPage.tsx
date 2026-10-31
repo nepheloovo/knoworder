@@ -1,4 +1,4 @@
-import { Copy, KeyRound, Plus, Trash2, Users } from 'lucide-react';
+import { Check, Copy, KeyRound, Minus, Plus, ScrollText, Search, ShieldCheck, Trash2, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { apiFetch, errorMessage } from '../api/client';
@@ -6,7 +6,8 @@ import { useAuth } from '../auth';
 import { ConfirmModal, Empty, Field, Loading, Modal, Notice, Spinner, Tag, formatTime, useToast } from '../components/ui';
 import type { Role } from '../types';
 
-type Tab = 'members' | 'tokens';
+type Tab = 'members' | 'roles' | 'tokens' | 'audit';
+type AuditEvent = { id: string; actor_name: string; action: string; resource_type: string; resource_id: string | null; detail: Record<string, unknown>; created_at: string };
 type Member = { id: string; email: string; display_name: string; is_active: boolean; role: Role; joined_at: string };
 type ApiClientItem = { id: string; name: string; role: 'admin' | 'manager'; scopes: string[]; last_used_at: string | null };
 
@@ -18,15 +19,18 @@ const SCOPES: Array<[string, string]> = [
 
 export function SettingsPage() {
   const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get('tab') === 'tokens' ? 'tokens' : 'members';
+  const requested = params.get('tab');
+  const tab: Tab = requested === 'roles' || requested === 'tokens' || requested === 'audit' ? requested : 'members';
   return (
     <div className="page" style={{ maxWidth: 1080 }}>
-      <div className="page-head"><div className="grow"><h1>设置</h1><p>管理业务空间成员和业务系统调用用的 API Token。</p></div></div>
+      <div className="page-head"><div className="grow"><h1>设置</h1><p>管理业务空间成员、业务系统调用用的 API Token，并查看操作审计。</p></div></div>
       <div className="seg" style={{ marginBottom: 16 }}>
         <button className={tab === 'members' ? 'active' : ''} onClick={() => setParams({ tab: 'members' })}><Users size={14} />成员</button>
+        <button className={tab === 'roles' ? 'active' : ''} onClick={() => setParams({ tab: 'roles' })}><ShieldCheck size={14} />角色与权限</button>
         <button className={tab === 'tokens' ? 'active' : ''} onClick={() => setParams({ tab: 'tokens' })}><KeyRound size={14} />API Token</button>
+        <button className={tab === 'audit' ? 'active' : ''} onClick={() => setParams({ tab: 'audit' })}><ScrollText size={14} />审计日志</button>
       </div>
-      {tab === 'members' ? <MembersView /> : <TokensView />}
+      {tab === 'members' ? <MembersView /> : tab === 'roles' ? <RolesView /> : tab === 'tokens' ? <TokensView /> : <AuditView />}
     </div>
   );
 }
@@ -155,5 +159,99 @@ function TokensView() {
       <ConfirmModal open={!!revoking} danger title="吊销 Token" confirmText="吊销" body={<>吊销后使用「{revoking?.name}」的业务系统会立即失去访问权限。</>} onClose={() => setRevoking(null)}
         onConfirm={async () => { if (!revoking) return; try { await apiFetch(`/auth/api-clients/${revoking.id}`, { method: 'DELETE' }); toast('已吊销'); await load(); } catch (caught) { toast(errorMessage(caught), 'error'); } }} />
     </>
+  );
+}
+
+const AUDIT_ACTION: Record<string, string> = {
+  'application.created': '创建应用', 'application.draft_updated': '修改草稿', 'application.version_created': '生成版本', 'application.published': '发布',
+  'application.unpublished': '下线', 'application.rolled_back': '回滚版本', 'application.archived': '归档应用', 'application.restored': '恢复应用',
+  'application.deleted': '删除应用', 'application.duplicated': '复制应用', 'application.evaluated': '运行评测', 'application.share_created': '创建分享链接',
+  'application.share_revoked': '停用分享链接', 'evaluation_set.created': '创建评测集', 'evaluation_set.ai_designed': 'AI 设计评测集', 'evaluation_set.run': '运行评测集',
+  'evaluation_case.updated': '修改评测 Case', 'evaluation_case.returned': '日志回流为 Case', 'member.invited': '邀请成员', 'member.role_updated': '修改成员角色',
+  'member.removed': '移除成员', 'api_client.created': '创建 API Token', 'api_client.revoked': '吊销 API Token', 'tool.created': '新增工具', 'tool.updated': '修改工具',
+  'tool.deleted': '删除工具', 'tool.tested': '测试工具',
+};
+const RESOURCE_LABEL: Record<string, string> = { application: '应用', evaluation_set: '评测集', evaluation_case: '评测 Case', member: '成员', api_client: 'API Token', tool: '工具' };
+
+function auditSummary(detail: Record<string, unknown>) {
+  const parts = Object.entries(detail ?? {}).filter(([, value]) => value !== null && value !== '' && typeof value !== 'object').map(([key, value]) => `${key}: ${String(value)}`);
+  return parts.join(' · ');
+}
+
+function AuditView() {
+  const toast = useToast();
+  const [events, setEvents] = useState<AuditEvent[] | null>(null);
+  const [search, setSearch] = useState('');
+  const [action, setAction] = useState('');
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const query = new URLSearchParams({ limit: '200' });
+      if (search.trim()) query.set('search', search.trim());
+      if (action) query.set('action', action);
+      apiFetch<AuditEvent[]>(`/audit-events?${query}`).then(setEvents).catch((caught) => toast(errorMessage(caught), 'error'));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [search, action, toast]);
+  return (
+    <div className="card pad">
+      <div className="row wrap" style={{ gap: 12, marginBottom: 12 }}>
+        <div className="search-box grow" style={{ maxWidth: 320 }}><Search size={15} /><input className="input sm" aria-label="搜索审计日志" placeholder="搜索动作、对象类型或 ID" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+        <select className="select" style={{ width: 180 }} aria-label="按动作筛选" value={action} onChange={(event) => setAction(event.target.value)}>
+          <option value="">全部动作</option>
+          {Object.entries(AUDIT_ACTION).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+        </select>
+        <span className="faint">最近 200 条</span>
+      </div>
+      {!events ? <Loading /> : !events.length ? <Empty title="没有审计记录" desc="发布、评测、成员与 Token 变更等关键操作会记录在这里。" /> : (
+        <table className="table">
+          <thead><tr><th>时间</th><th>操作人</th><th>动作</th><th>对象</th><th>详情</th></tr></thead>
+          <tbody>{events.map((item) => (
+            <tr key={item.id}>
+              <td className="faint" style={{ whiteSpace: 'nowrap' }}>{formatTime(item.created_at)}</td>
+              <td>{item.actor_name}</td>
+              <td><Tag>{AUDIT_ACTION[item.action] ?? item.action}</Tag></td>
+              <td className="muted">{RESOURCE_LABEL[item.resource_type] ?? item.resource_type}{item.resource_id ? <span className="faint" title={item.resource_id}> · {item.resource_id.slice(0, 8)}</span> : null}</td>
+              <td className="faint ellipsis" style={{ maxWidth: 280 }} title={JSON.stringify(item.detail)}>{auditSummary(item.detail) || '—'}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// 与后端各路由的 require_roles 保持一致；角色目前是内置的三种，暂不支持自定义
+const PERMISSIONS: Array<[string, [boolean, boolean, boolean]]> = [
+  ['在工作台使用已发布的应用、查看自己的对话', [true, true, true]],
+  ['搭建、调试、发布、回滚应用，管理分享链接', [true, true, false]],
+  ['管理知识库：导入、切块、检索测试', [true, true, false]],
+  ['评测集、发布门禁与 LLM 评委', [true, true, false]],
+  ['看板与可观测：运行 Trace、对话日志、用量与费用', [true, true, false]],
+  ['集成：模型与工具配置', [true, false, false]],
+  ['设置：成员、API Token、审计日志', [true, false, false]],
+];
+const ROLE_DESC: Record<Role, string> = {
+  admin: '业务空间的全部权限，包括模型密钥、成员和审计。',
+  manager: '负责应用交付：搭建应用、维护知识库、跑评测和看运营数据。',
+  user: '业务人员：只能使用已发布的应用。',
+};
+
+function RolesView() {
+  const roles: Role[] = ['admin', 'manager', 'user'];
+  return (
+    <div className="col" style={{ gap: 16 }}>
+      <div className="grid c3">
+        {roles.map((role) => <div key={role} className="card pad row" style={{ alignItems: 'flex-start' }}><ShieldCheck size={20} color="var(--primary)" /><div className="grow"><strong>{ROLE_LABEL[role]}</strong><div className="faint" style={{ marginTop: 4 }}>{ROLE_DESC[role]}</div></div></div>)}
+      </div>
+      <div className="card pad">
+        <table className="table">
+          <thead><tr><th>权限</th>{roles.map((role) => <th key={role} style={{ textAlign: 'center' }}>{ROLE_LABEL[role]}</th>)}</tr></thead>
+          <tbody>{PERMISSIONS.map(([label, allowed]) => (
+            <tr key={label}><td>{label}</td>{allowed.map((ok, index) => <td key={index} style={{ textAlign: 'center' }}>{ok ? <Check size={16} color="var(--green)" aria-label="允许" /> : <Minus size={16} className="faint" aria-label="不允许" />}</td>)}</tr>
+          ))}</tbody>
+        </table>
+        <p className="faint" style={{ marginTop: 10 }}>角色在「成员」页签中分配。自定义角色、按部门设置应用可见范围需要接入企业 SSO 后提供。</p>
+      </div>
+    </div>
   );
 }
