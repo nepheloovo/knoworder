@@ -96,6 +96,7 @@ async def init_db(target_engine: AsyncEngine | None = None) -> None:
                 "output_json": "JSON",
                 "app_version_id": "VARCHAR(36)",
             },
+            "evaluation_suites": {"judge_config": "JSON NOT NULL DEFAULT '{}'"},
             "query_logs": {
                 "workspace_id": f"VARCHAR(36) NOT NULL DEFAULT '{default_workspace}'",
                 "app_version_id": "VARCHAR(36)",
