@@ -54,7 +54,7 @@ export const APPS: AppItem[] = [
     knowledge: ['kb-product', 'kb-aftersale'],
     model: 'DeepSeek-V3.2',
     stats: { runs7d: 8642, users7d: 2310, satisfaction: 92, hitRate: 88 },
-    opening: '您好，我是知枢智能客服。可以帮您解答产品使用、售后政策，或查询订单进度。',
+    opening: '您好，我是知序智能客服。可以帮您解答产品使用、售后政策，或查询订单进度。',
     suggestions: ['设备无法开机怎么办？', '退货运费谁承担？', '帮我查一下订单 SO20261024017', '发票怎么开？'],
   },
   {

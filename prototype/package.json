@@ -1,11 +1,11 @@
 {
-  "name": "zhishu-prototype",
+  "name": "knoworder-prototype",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port 4180",
-    "build": "tsc -b && vite build && cp dist/index.html 知枢-前端原型.html",
+    "build": "tsc -b && vite build && cp dist/index.html 知序-前端原型.html",
     "preview": "vite preview --port 4181",
     "typecheck": "tsc -b --pretty false"
   },

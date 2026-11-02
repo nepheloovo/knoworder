@@ -497,7 +497,7 @@ async def import_web_page(
     try:
         await validate_target(url, allow_private_network=False)
         async with httpx.AsyncClient(timeout=20, follow_redirects=False) as client:
-            response = await client.get(url, headers={"User-Agent": "ZhishuKnowledgeImporter/1.0"})
+            response = await client.get(url, headers={"User-Agent": "KnowOrderKnowledgeImporter/1.0"})
         response.raise_for_status()
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=422, detail=f"网页抓取失败：{exc}") from exc
