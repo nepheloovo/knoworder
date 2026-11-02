@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowLeft, CheckCircle2, Cloud, CloudOff, Play, Rocket } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { apiFetch, errorMessage, type ApiEvaluationSet, type ApiKnowledgeBase, type ApiModelOption, type ApiToolConfig } from '../api/client';
 import { evalApi } from '../api/evaluation';
@@ -10,6 +10,9 @@ import { AppConfigForm } from '../editors/AppConfigForm';
 import { appStatus, TYPE_META } from '../lib/apps';
 import { EvalTab, LogsTab, PublishTab, VersionsTab } from './AppTabs';
 import { C } from '../theme';
+
+// 画布库较大，只有打开 Chat Flow 时才加载
+const FlowEditor = lazy(() => import('../editors/FlowEditor').then((module) => ({ default: module.FlowEditor })));
 
 const TABS = [
   { key: 'edit', name: '编排' },
@@ -131,6 +134,11 @@ export function AppEditorPage() {
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: tab === 'edit' ? 'hidden' : 'auto' }}>
         {/* 编排区常驻挂载：切换到其他 Tab 再回来，调试对话不会丢失 */}
+        {manifest.type === 'chatflow' ? (
+          <div style={{ flex: 1, display: tab === 'edit' ? 'flex' : 'none', minHeight: 0 }}>
+            <Suspense fallback={<Loading text="正在加载画布" />}><FlowEditor app={app} manifest={manifest} patch={patch} resources={resources} beforeSend={ensureSaved} /></Suspense>
+          </div>
+        ) : (
         <div style={{ flex: 1, display: tab === 'edit' ? 'flex' : 'none', minHeight: 0, flexWrap: 'wrap' }}>
           <div style={{ width: 560, maxWidth: '100%', flex: 'none', overflow: 'auto', padding: '4px 24px 24px', borderRight: '1px solid var(--border)', maxHeight: '100%' }}>
             <AppConfigForm manifest={manifest} patch={patch} {...resources} />
@@ -140,6 +148,7 @@ export function AppEditorPage() {
               title={<><strong>调试预览</strong><Tag tone="orange">草稿</Tag><span className="faint">运行记录进入可观测 · 渠道「调试」</span></>} />
           </div>
           </div>
+        )}
         {tab === 'publish' ? <PublishTab app={app} onChanged={() => void reload()} /> : null}
         {tab === 'eval' ? <EvalTab app={app} /> : null}
         {tab === 'logs' ? <LogsTab app={app} /> : null}

@@ -1,8 +1,8 @@
-import { Activity, BookOpen, ChevronDown, ChevronRight, CircleAlert, Headset, RotateCcw, Send, ShieldQuestion, ThumbsDown, ThumbsUp, Wrench } from 'lucide-react';
+import { Activity, BookOpen, ChevronDown, ChevronRight, CircleAlert, Headset, Hourglass, RotateCcw, Send, ShieldQuestion, ThumbsDown, ThumbsUp, Wrench } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError, errorMessage } from '../api/client';
-import { fdeApi, type AppManifest, type Citation, type RunResult } from '../api/fde';
+import { fdeApi, type AppManifest, type Citation, type FlowRun, type FlowWaiting, type InputField, type RunPayload, type RunResult } from '../api/fde';
 import { Markdown } from './Markdown';
 import { AppTile, Drawer, Field, Notice, Spinner, Tag, formatDuration, useToast } from './ui';
 import { C } from '../theme';
@@ -22,6 +22,8 @@ interface Msg {
   messageId?: string;
   meta?: { tokens: number | null; duration: number; model?: string; simulated: boolean };
   request?: { message: string; inputs: Record<string, unknown> };
+  /** Chat Flow 停在表单 / 用户选择，等待用户提交 */
+  waiting?: FlowWaiting | null;
 }
 
 export type ChatMode = 'debug' | 'run' | 'share';
@@ -70,14 +72,16 @@ export function needsForm(manifest: AppManifest) {
   return manifest.input_fields.length > 1 || manifest.input_fields.some((field) => field.required && !['text', 'textarea'].includes(field.type)) || textRequired.length > 1;
 }
 
-function defaults(manifest: AppManifest) {
-  return Object.fromEntries(manifest.input_fields.map((field) => [field.key, field.default ?? (field.type === 'boolean' ? false : '')]));
+function fieldDefaults(fields: InputField[]) {
+  return Object.fromEntries(fields.map((field) => [field.key, field.default ?? (field.type === 'boolean' ? false : '')]));
 }
 
-export function InputForm({ manifest, values, onChange }: { manifest: AppManifest; values: Record<string, unknown>; onChange: (values: Record<string, unknown>) => void }) {
+const defaults = (manifest: AppManifest) => fieldDefaults(manifest.input_fields);
+
+export function InputForm({ fields, values, onChange }: { fields: InputField[]; values: Record<string, unknown>; onChange: (values: Record<string, unknown>) => void }) {
   return (
     <div className="grid c2" style={{ gap: '0 12px' }}>
-      {manifest.input_fields.map((field) => (
+      {fields.map((field) => (
         <div key={field.key} style={{ gridColumn: field.type === 'textarea' ? '1 / -1' : undefined }}>
           <Field label={field.label} required={field.required} hint={field.description}>
             {field.type === 'textarea' ? <textarea className="textarea" style={{ minHeight: 64 }} placeholder={field.placeholder} value={String(values[field.key] ?? '')} onChange={(event) => onChange({ ...values, [field.key]: event.target.value })} /> : null}
@@ -92,7 +96,25 @@ export function InputForm({ manifest, values, onChange }: { manifest: AppManifes
   );
 }
 
-export function ChatPanel({ appId, manifest, mode, shareToken, title, initialConversation, onConversation, beforeSend }: {
+/** Chat Flow 暂停处：表单填写或选项按钮，提交后流程从这一步继续。 */
+function FlowStep({ waiting, busy, onSubmit }: { waiting: FlowWaiting; busy: boolean; onSubmit: (values: Record<string, unknown>, summary: string) => void }) {
+  const fields = waiting.fields ?? [];
+  const [values, setValues] = useState<Record<string, unknown>>(() => fieldDefaults(fields));
+  const missing = fields.filter((field) => field.required && (values[field.key] === '' || values[field.key] == null));
+  return (
+    <div className="card pad flow-step" style={{ marginTop: 8 }}>
+      <div className="row" style={{ gap: 6, marginBottom: 8 }}><Hourglass size={14} color={C.rose} /><strong style={{ fontSize: 13 }}>{waiting.title}</strong><span className="faint">{waiting.kind === 'form' ? '填写后继续' : '选择后继续'}</span></div>
+      {waiting.kind === 'form' ? <>
+        <InputForm fields={fields} values={values} onChange={setValues} />
+        <button className="btn primary sm" disabled={busy || missing.length > 0} onClick={() => onSubmit(values, fields.map((field) => `${field.label}：${values[field.key] === true ? '是' : values[field.key] === false ? '否' : String(values[field.key] ?? '')}`).join('\n'))}>提交</button>
+      </> : (
+        <div className="row wrap" style={{ gap: 6 }}>{(waiting.options ?? []).map((option, index) => <button key={option} className={`btn sm ${index === 0 ? 'primary' : ''}`} disabled={busy} onClick={() => onSubmit({ choice: option }, option)}>{option}</button>)}</div>
+      )}
+    </div>
+  );
+}
+
+export function ChatPanel({ appId, manifest, mode, shareToken, title, initialConversation, onConversation, beforeSend, onFlow }: {
   appId: string;
   /** 调试模式下在发送前保存草稿，确保预览运行的是最新配置。 */
   beforeSend?: () => Promise<void>;
@@ -100,8 +122,10 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
   mode: ChatMode;
   shareToken?: string;
   title?: ReactNode;
-  initialConversation?: { id: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: Citation[] }> } | null;
+  initialConversation?: { id: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: Citation[]; flow_waiting?: FlowWaiting | null }> } | null;
   onConversation?: (id: string) => void;
+  /** Chat Flow 每次运行后回传节点状态，编排画布据此高亮执行路径 */
+  onFlow?: (flow: FlowRun | null) => void;
 }) {
   const toast = useToast();
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -119,7 +143,7 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
   useEffect(() => {
     if (!initialConversation) return;
     setConversationId(initialConversation.id);
-    setMsgs(initialConversation.messages.map((item) => ({ id: item.id, role: item.role === 'assistant' ? 'bot' : 'user', content: item.content, citations: item.citations, messageId: item.role === 'assistant' ? item.id : undefined })));
+    setMsgs(initialConversation.messages.map((item) => ({ id: item.id, role: item.role === 'assistant' ? 'bot' : 'user', content: item.content, citations: item.citations, messageId: item.role === 'assistant' ? item.id : undefined, waiting: item.flow_waiting ?? null })));
   }, [initialConversation]);
 
   useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); }, [msgs]);
@@ -135,12 +159,12 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
   }, [fieldKeys]);
 
   /** confirmFor：确认副作用工具后，原地替换那条「待确认」回复，避免重复执行。 */
-  const execute = async (message: string, inputs: Record<string, unknown>, confirmed: string[] = [], confirmFor?: string) => {
+  const execute = async (message: string, inputs: Record<string, unknown>, confirmed: string[] = [], confirmFor?: string, resume?: RunPayload['resume']) => {
     const botId = confirmFor ?? crypto.randomUUID();
     const placeholder: Msg = { id: botId, role: 'bot', content: '', pending: true, request: { message, inputs } };
     setMsgs((current) => (confirmFor ? current.map((item) => (item.id === confirmFor ? placeholder : item)) : [...current, placeholder]));
     setBusy(true);
-    const payload = { message, input_values: inputs, conversation_id: conversationId, confirmed_tool_names: confirmed };
+    const payload: RunPayload = { message, input_values: inputs, conversation_id: conversationId, confirmed_tool_names: confirmed, resume };
     try {
       await beforeSend?.();
       const result = mode === 'share' && shareToken ? await fdeApi.runShare(shareToken, payload) : mode === 'debug' ? await fdeApi.preview(appId, payload) : await fdeApi.run(appId, payload);
@@ -148,11 +172,14 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
       onConversation?.(result.conversation_id);
       setMsgs((current) => current.map((item) => (item.id === botId ? {
         ...item, pending: false, content: result.content, steps: result.agent_steps, citations: result.citations, handoff: result.handoff,
-        messageId: result.message_id, traceId: result.trace_id,
+        messageId: result.message_id, traceId: result.trace_id, waiting: result.flow?.waiting ?? null,
         meta: { tokens: result.tokens.total, duration: result.duration_ms, model: result.model?.display_name, simulated: result.simulated },
       } : item)));
+      if (result.flow) onFlow?.(result.flow);
+      return true;
     } catch (caught) {
       setMsgs((current) => current.map((item) => (item.id === botId ? { ...item, pending: false, error: errorMessage(caught), traceId: caught instanceof ApiError ? caught.traceId : undefined } : item)));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -180,7 +207,16 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
     void execute(message, inputs);
   };
 
-  const reset = () => { setMsgs([]); setConversationId(undefined); setValues(defaults(manifest)); setFormOpen(true); };
+  const resume = (target: Msg, submitted: Record<string, unknown>, summary: string) => {
+    if (busy || !target.messageId) return;
+    setMsgs((current) => [...current.map((item) => (item.id === target.id ? { ...item, waiting: null } : item)), { id: crypto.randomUUID(), role: 'user', content: summary }]);
+    // 提交被拒（如必填项缺失）时恢复这一步，用户改完可以再次提交
+    void execute('', {}, [], undefined, { message_id: target.messageId, values: submitted }).then((ok) => {
+      if (!ok) setMsgs((current) => current.map((item) => (item.id === target.id ? { ...item, waiting: target.waiting } : item)));
+    });
+  };
+
+  const reset = () => { setMsgs([]); setConversationId(undefined); setValues(defaults(manifest)); setFormOpen(true); onFlow?.(null); };
   const feedback = async (messageId: string, rating: 1 | -1) => {
     try {
       await fdeApi.feedback(messageId, rating);
@@ -217,7 +253,7 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
             <div style={{ maxWidth: 'min(720px, 88%)', minWidth: 0 }}>
               {m.steps?.length && (debug || manifest.agent.show_tool_steps) ? <StepsView steps={m.steps} open={debug} /> : null}
               <div className="bubble" style={{ maxWidth: '100%', whiteSpace: 'normal', borderColor: m.error ? C.dangerSoft : undefined, background: m.error ? 'var(--red-50)' : undefined }}>
-                {m.pending ? <span className="row muted"><Spinner size={14} />{manifest.type === 'agent' ? '正在思考并调用工具…' : '正在生成…'}</span> : null}
+                {m.pending ? <span className="row muted"><Spinner size={14} />{manifest.type === 'agent' ? '正在思考并调用工具…' : manifest.type === 'chatflow' ? '正在执行流程…' : '正在生成…'}</span> : null}
                 {m.error ? <span className="row" style={{ color: C.dangerText, alignItems: 'flex-start' }}><CircleAlert size={15} style={{ flex: 'none', marginTop: 3 }} /><span>{m.error}</span></span> : null}
                 {m.content ? <Markdown text={m.content} /> : null}
                 {m.citations?.length ? (
@@ -227,6 +263,7 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
                   </div>
                 ) : null}
               </div>
+              {m.waiting && !m.pending ? <FlowStep waiting={m.waiting} busy={busy} onSubmit={(submitted, summary) => resume(m, submitted, summary)} /> : null}
               {m.steps?.some((step) => step.status === 'confirmation_required') && m.request ? (
                 <div className="notice warn" style={{ marginTop: 6 }}>
                   <ShieldQuestion size={16} />
@@ -252,7 +289,7 @@ export function ChatPanel({ appId, manifest, mode, shareToken, title, initialCon
       {form ? (
         <div style={{ margin: '0 20px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
           <button className="btn ghost sm" onClick={() => setFormOpen(!formOpen)}>{formOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}业务输入</button>
-          {formOpen ? <div style={{ maxHeight: 280, overflow: 'auto', paddingTop: 8 }}><InputForm manifest={manifest} values={values} onChange={setValues} /></div> : null}
+          {formOpen ? <div style={{ maxHeight: 280, overflow: 'auto', paddingTop: 8 }}><InputForm fields={manifest.input_fields} values={values} onChange={setValues} /></div> : null}
         </div>
       ) : null}
       {debug && !manifest.llm_model_id ? <div style={{ margin: '0 20px 8px' }}><Notice tone="warn">还没有选择对话模型，选择后才能调试。</Notice></div> : null}
