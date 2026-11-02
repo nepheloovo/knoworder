@@ -484,7 +484,7 @@ function Canvas({ app, manifest, patch, resources, beforeSend }: { app: FDEApp; 
         <div ref={wrapper} className="flow-canvas" onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; }} onDrop={onDrop}>
           <ReactFlow nodes={nodes} edges={shownEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} isValidConnection={isValidConnection}
             onNodeClick={(_, node) => { setSelected(node.id); setPanel('node'); }} onPaneClick={() => { setSelected(null); setPanel((value) => (value === 'node' ? null : value)); }}
-            fitView fitViewOptions={{ padding: { left: '290px', top: '70px', right: '40px', bottom: '60px' }, maxZoom: 1 }} minZoom={0.2} maxZoom={1.6} deleteKeyCode={['Backspace', 'Delete']}
+            fitView fitViewOptions={{ padding: { left: library ? '290px' : '40px', top: '70px', right: '40px', bottom: '60px' }, maxZoom: 1 }} minZoom={0.2} maxZoom={1.6} deleteKeyCode={['Backspace', 'Delete']}
             defaultEdgeOptions={{ style: { strokeWidth: 1.6, stroke: '#9fb3b0' } }} proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={18} size={1.2} color="#cfd9d7" />
             <MiniMap pannable zoomable style={{ width: 150, height: 96 }} nodeColor={(node) => DEF[(node as FlowRFNode).data.spec.kind].color} />

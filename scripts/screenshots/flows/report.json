@@ -1,0 +1,230 @@
+{
+ "input_fields": [],
+ "graph": {
+  "nodes": [
+   {
+    "id": "start",
+    "kind": "start",
+    "title": "流程开始",
+    "position": {
+     "x": 0,
+     "y": 40
+    },
+    "config": {}
+   },
+   {
+    "id": "brief",
+    "kind": "form",
+    "title": "收集报告需求",
+    "position": {
+     "x": 300,
+     "y": 20
+    },
+    "config": {
+     "prompt": "先确认几项报告需求：",
+     "fields": [
+      {
+       "key": "topic",
+       "label": "报告主题",
+       "type": "text",
+       "description": "",
+       "required": true,
+       "placeholder": "",
+       "options": [],
+       "default": null,
+       "minimum": null,
+       "maximum": null
+      },
+      {
+       "key": "audience",
+       "label": "读者",
+       "type": "select",
+       "description": "",
+       "required": true,
+       "placeholder": "",
+       "options": [
+        "公司管理层",
+        "业务部门",
+        "客户"
+       ],
+       "default": null,
+       "minimum": null,
+       "maximum": null
+      },
+      {
+       "key": "length",
+       "label": "篇幅",
+       "type": "select",
+       "description": "",
+       "required": true,
+       "placeholder": "",
+       "options": [
+        "约 3000 字",
+        "约 6000 字",
+        "约 10000 字"
+       ],
+       "default": null,
+       "minimum": null,
+       "maximum": null
+      }
+     ]
+    }
+   },
+   {
+    "id": "research",
+    "kind": "kb",
+    "title": "检索参考资料",
+    "position": {
+     "x": 600,
+     "y": 20
+    },
+    "config": {
+     "knowledge_base_ids": [],
+     "query": "{{brief.topic}}",
+     "mode": "hybrid",
+     "top_k": 8,
+     "rerank_top_n": 3,
+     "score_threshold": 0.35,
+     "max_context_chars": 8000
+    }
+   },
+   {
+    "id": "outline",
+    "kind": "llm",
+    "title": "生成大纲",
+    "position": {
+     "x": 900,
+     "y": 20
+    },
+    "config": {
+     "model_id": null,
+     "system_prompt": "你是资深行业分析师。",
+     "prompt": "基于参考资料，为「{{brief.topic}}」写一份面向{{brief.audience}}的报告大纲，篇幅{{brief.length}}。\n只输出 4–6 个一级章节标题，每行一个，不要其他内容。\n\n参考资料：\n{{research.context}}",
+     "temperature": null,
+     "max_tokens": null,
+     "history": false
+    }
+   },
+   {
+    "id": "confirm",
+    "kind": "choice",
+    "title": "确认大纲",
+    "position": {
+     "x": 1200,
+     "y": 20
+    },
+    "config": {
+     "prompt": "报告大纲如下：\n\n{{outline.text}}\n\n确认后开始逐章撰写。",
+     "options": [
+      "确认，开始撰写",
+      "先不写了"
+     ]
+    }
+   },
+   {
+    "id": "chapters",
+    "kind": "loop",
+    "title": "逐章撰写",
+    "position": {
+     "x": 600,
+     "y": 300
+    },
+    "config": {
+     "items": "{{outline.text}}",
+     "model_id": null,
+     "system_prompt": "",
+     "prompt": "报告主题：{{brief.topic}}（读者：{{brief.audience}}）\n完整大纲：\n{{outline.text}}\n\n请撰写第 {{index}} 章「{{item}}」，以「## {{item}}」开头，引用资料时标注 [资料 n]。\n\n参考资料：\n{{research.context}}",
+     "max_items": 8,
+     "parallel": 3,
+     "separator": ""
+    }
+   },
+   {
+    "id": "merge",
+    "kind": "template",
+    "title": "合并全文",
+    "position": {
+     "x": 900,
+     "y": 300
+    },
+    "config": {
+     "template": "# {{brief.topic}}\n\n{{chapters.text}}"
+    }
+   },
+   {
+    "id": "report",
+    "kind": "answer",
+    "title": "输出报告",
+    "position": {
+     "x": 1200,
+     "y": 300
+    },
+    "config": {
+     "template": "{{merge.text}}"
+    }
+   },
+   {
+    "id": "stopped",
+    "kind": "answer",
+    "title": "取消撰写",
+    "position": {
+     "x": 1500,
+     "y": 160
+    },
+    "config": {
+     "template": "好的，已取消撰写。补充要求后可以重新发起。"
+    }
+   }
+  ],
+  "edges": [
+   {
+    "id": "start-o-brief",
+    "source": "start",
+    "target": "brief",
+    "source_handle": null
+   },
+   {
+    "id": "brief-o-research",
+    "source": "brief",
+    "target": "research",
+    "source_handle": null
+   },
+   {
+    "id": "research-o-outline",
+    "source": "research",
+    "target": "outline",
+    "source_handle": null
+   },
+   {
+    "id": "outline-o-confirm",
+    "source": "outline",
+    "target": "confirm",
+    "source_handle": null
+   },
+   {
+    "id": "confirm-b0-chapters",
+    "source": "confirm",
+    "target": "chapters",
+    "source_handle": "b0"
+   },
+   {
+    "id": "confirm-b1-stopped",
+    "source": "confirm",
+    "target": "stopped",
+    "source_handle": "b1"
+   },
+   {
+    "id": "chapters-o-merge",
+    "source": "chapters",
+    "target": "merge",
+    "source_handle": null
+   },
+   {
+    "id": "merge-o-report",
+    "source": "merge",
+    "target": "report",
+    "source_handle": null
+   }
+  ]
+ }
+}

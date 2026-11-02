@@ -1,0 +1,247 @@
+{
+ "input_fields": [
+  {
+   "key": "contract",
+   "label": "合同正文",
+   "type": "textarea",
+   "description": "",
+   "required": true,
+   "placeholder": "粘贴需要审校的合同全文",
+   "options": [],
+   "default": null,
+   "minimum": null,
+   "maximum": null
+  }
+ ],
+ "graph": {
+  "nodes": [
+   {
+    "id": "start",
+    "kind": "start",
+    "title": "流程开始",
+    "position": {
+     "x": 0.0,
+     "y": 40.0
+    },
+    "config": {}
+   },
+   {
+    "id": "facts",
+    "kind": "extract",
+    "title": "提取合同要素",
+    "position": {
+     "x": 300.0,
+     "y": 20.0
+    },
+    "config": {
+     "model_id": null,
+     "input": "{{start.contract}}",
+     "fields": [
+      {
+       "key": "contract_type",
+       "label": "合同类型",
+       "type": "string",
+       "description": "采购 / 销售 / 服务 / 其他"
+      },
+      {
+       "key": "party_a",
+       "label": "甲方",
+       "type": "string",
+       "description": ""
+      },
+      {
+       "key": "party_b",
+       "label": "乙方",
+       "type": "string",
+       "description": ""
+      },
+      {
+       "key": "amount",
+       "label": "合同金额",
+       "type": "number",
+       "description": "含税总价，单位元"
+      },
+      {
+       "key": "term",
+       "label": "合同期限",
+       "type": "string",
+       "description": "起止日期"
+      }
+     ]
+    }
+   },
+   {
+    "id": "kind",
+    "kind": "classify",
+    "title": "识别合同类型",
+    "position": {
+     "x": 600.0,
+     "y": 20.0
+    },
+    "config": {
+     "model_id": null,
+     "input": "合同类型：{{facts.contract_type}}\n\n{{start.contract}}",
+     "categories": [
+      "采购合同",
+      "销售合同",
+      "服务合同",
+      "其他"
+     ],
+     "instruction": ""
+    }
+   },
+   {
+    "id": "clauses",
+    "kind": "kb",
+    "title": "检索条款库",
+    "position": {
+     "x": 900.0,
+     "y": 20.0
+    },
+    "config": {
+     "knowledge_base_ids": [],
+     "query": "{{kind.category}} 审查要点 {{facts.contract_type}}",
+     "mode": "hybrid",
+     "top_k": 8,
+     "rerank_top_n": 3,
+     "score_threshold": 0.35,
+     "max_context_chars": 8000
+    }
+   },
+   {
+    "id": "unsupported",
+    "kind": "answer",
+    "title": "暂不支持",
+    "position": {
+     "x": 600.0,
+     "y": 340.0
+    },
+    "config": {
+     "template": "这类合同暂不支持自动审校，请发起人工审核。"
+    }
+   },
+   {
+    "id": "review",
+    "kind": "llm",
+    "title": "逐条比对与风险分级",
+    "position": {
+     "x": 1200.0,
+     "y": 20.0
+    },
+    "config": {
+     "model_id": null,
+     "system_prompt": "你是企业法务。",
+     "prompt": "对照条款库要求，逐条审查下面的{{kind.category}}，列出风险条款，每条注明风险等级（高 / 中 / 低）、原文、问题和修改建议。\n没有高风险条款时，第一行写「无高风险条款」。\n\n合同要素：{{facts.json}}\n\n条款库：\n{{clauses.context}}\n\n合同正文：\n{{start.contract}}",
+     "temperature": null,
+     "max_tokens": null,
+     "history": false
+    }
+   },
+   {
+    "id": "risky",
+    "kind": "ifelse",
+    "title": "存在高风险条款？",
+    "position": {
+     "x": 900.0,
+     "y": 340.0
+    },
+    "config": {
+     "conditions": [
+      {
+       "left": "{{review.text}}",
+       "operator": "not_contains",
+       "right": "无高风险条款"
+      }
+     ],
+     "logic": "and"
+    }
+   },
+   {
+    "id": "alert",
+    "kind": "answer",
+    "title": "输出风险报告",
+    "position": {
+     "x": 1200.0,
+     "y": 300.0
+    },
+    "config": {
+     "template": "**发现高风险条款，建议提交法务复核。**\n\n{{review.text}}"
+    }
+   },
+   {
+    "id": "clean",
+    "kind": "answer",
+    "title": "输出审校结论",
+    "position": {
+     "x": 1200.0,
+     "y": 470.0
+    },
+    "config": {
+     "template": "未发现高风险条款。\n\n{{review.text}}"
+    }
+   }
+  ],
+  "edges": [
+   {
+    "id": "start-o-facts",
+    "source": "start",
+    "target": "facts",
+    "source_handle": null
+   },
+   {
+    "id": "facts-o-kind",
+    "source": "facts",
+    "target": "kind",
+    "source_handle": null
+   },
+   {
+    "id": "kind-b0-clauses",
+    "source": "kind",
+    "target": "clauses",
+    "source_handle": "b0"
+   },
+   {
+    "id": "kind-b1-clauses",
+    "source": "kind",
+    "target": "clauses",
+    "source_handle": "b1"
+   },
+   {
+    "id": "kind-b2-clauses",
+    "source": "kind",
+    "target": "clauses",
+    "source_handle": "b2"
+   },
+   {
+    "id": "kind-b3-unsupported",
+    "source": "kind",
+    "target": "unsupported",
+    "source_handle": "b3"
+   },
+   {
+    "id": "clauses-o-review",
+    "source": "clauses",
+    "target": "review",
+    "source_handle": null
+   },
+   {
+    "id": "review-o-risky",
+    "source": "review",
+    "target": "risky",
+    "source_handle": null
+   },
+   {
+    "id": "risky-b0-alert",
+    "source": "risky",
+    "target": "alert",
+    "source_handle": "b0"
+   },
+   {
+    "id": "risky-b1-clean",
+    "source": "risky",
+    "target": "clean",
+    "source_handle": "b1"
+   }
+  ]
+ }
+}
