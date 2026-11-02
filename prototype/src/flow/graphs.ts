@@ -79,7 +79,7 @@ export const NODE_OUTPUT: Partial<Record<NodeKind, string>> = {
   export: '2026储能行业竞争格局.docx（312 KB）',
   answer: '已输出',
   doc_parse: '解析 18 页 · 42 个条款',
-  extract: '{ 类型: "采购", 甲方: "知枢储能", 金额: "¥ 3,860,000", 期限: "2026-11 ~ 2027-10" }',
+  extract: '{ 类型: "采购", 甲方: "知序储能", 金额: "¥ 3,860,000", 期限: "2026-11 ~ 2027-10" }',
   classify: '命中分支：采购合同（置信度 0.96）',
   ifelse: '高风险数量 = 2 → IF',
   http: '200 OK · 37 条任务',

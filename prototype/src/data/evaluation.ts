@@ -72,7 +72,7 @@ export const DEFAULT_EVALUATION_CASES: EvaluationCase[] = [
   },
 ];
 
-const STORAGE_KEY = 'zhishu-evaluation-state-v1';
+const STORAGE_KEY = 'knoworder-evaluation-state-v1';
 
 function emptyState(): EvaluationState {
   return { sets: [], cases: [] };

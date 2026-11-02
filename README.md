@@ -315,3 +315,7 @@ pnpm build
 - 使用 PostgreSQL + Celery + S3 和真实模型完成发布前验收，不以 SQLite / 测试替身结果证明模型质量。
 
 更多资料：[`docs/AUDIT.md`](docs/AUDIT.md)（现状审计）、[`docs/EVALUATION_CASE_RETURN.md`](docs/EVALUATION_CASE_RETURN.md)（线上 Case 回流设计）、[`prototype/`](prototype/README.md)（交互原型）。
+
+## 致谢
+
+本项目在 [chusimin/zhishu-rag-platform](https://github.com/chusimin/zhishu-rag-platform) 的基础上经授权二次开发。

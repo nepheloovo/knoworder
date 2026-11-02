@@ -19,7 +19,7 @@ export function Shell({ children, bare }: PropsWithChildren<{ bare?: boolean }>)
   return (
     <div className="shell">
       <nav className="nav" aria-label="主导航">
-        <div className="nav-logo" title="知枢 AI 应用中台" style={{ marginBottom: 4 }}>枢</div>
+        <div className="nav-logo" title="知序 AI 应用中台" style={{ marginBottom: 4 }}>序</div>
         <span className="tag orange" style={{ height: 'auto', fontSize: 10, lineHeight: 1.3, padding: '2px 5px', marginBottom: 12, textAlign: 'center', whiteSpace: 'normal' }} title="所有业务数据、报告内容、统计数字均为演示用的虚构数据">原型<br />示例数据</span>
         {NAV.map(({ to, label, icon: I }) => (
           <NavLink key={to} to={to} className={() => `nav-item ${pathname.startsWith(to) ? 'active' : ''}`}>

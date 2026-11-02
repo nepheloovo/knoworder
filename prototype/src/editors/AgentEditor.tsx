@@ -6,7 +6,7 @@ import { APPS, TOOLS, type AppItem } from '../data/mock';
 import { KnowledgePicker, ListEditor, ModelPicker, PromptBox, Section } from './common';
 
 const SERVICE_PROMPT = `# 角色
-你是「知枢储能」的售后客服，语气专业、耐心，称呼客户为「您」。
+你是「知序储能」的售后客服，语气专业、耐心，称呼客户为「您」。
 
 # 工作方式
 1. 产品使用、故障、政策类问题：先调用「知识库搜索」，只依据检索结果回答，并标注引用。
