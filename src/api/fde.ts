@@ -13,9 +13,17 @@ export type InputField = {
   maximum?: number | null;
 };
 
+export type FlowNodeKind = 'start' | 'llm' | 'kb' | 'classify' | 'extract' | 'ifelse' | 'template' | 'loop' | 'form' | 'choice' | 'tool' | 'answer';
+export type FlowNodeConfig = Record<string, any>;
+export type FlowNodeSpec = { id: string; kind: FlowNodeKind; title: string; position: { x: number; y: number }; config: FlowNodeConfig };
+export type FlowEdgeSpec = { id: string; source: string; target: string; source_handle?: string | null };
+export type FlowGraph = { nodes: FlowNodeSpec[]; edges: FlowEdgeSpec[] };
+export type FlowWaiting = { node_id: string; kind: 'form' | 'choice'; title: string; prompt: string; fields?: InputField[]; options?: string[] };
+export type FlowRun = { status: 'waiting' | 'completed'; waiting: FlowWaiting | null; nodes: Array<{ id: string; status: 'success' | 'skipped' | 'waiting'; duration_ms: number | null }> };
+
 export type AppManifest = {
   schema_version: 'fde.app/v1' | 'fde.app/v2';
-  type: 'simple' | 'agent';
+  type: 'simple' | 'agent' | 'chatflow';
   name: string;
   description: string;
   template_key: 'qa' | 'content' | 'report' | 'review' | 'customer_service' | string;
@@ -31,6 +39,7 @@ export type AppManifest = {
   delivery: { channel: 'web' | 'api' | 'both'; show_citations: boolean; allow_copy: boolean; allow_export: boolean };
   agent: { max_steps: number; require_confirmation_for_side_effects: boolean; show_tool_steps: boolean; long_term_memory: boolean; knowledge_mode: 'tool' | 'always' };
   experience: { opening: string; suggestions: string[] };
+  graph?: FlowGraph | null;
 };
 
 export type AppTemplate = {
@@ -76,6 +85,7 @@ export type RunResult = {
   handoff: boolean;
   agent_steps: Array<{ step: number; tool: string; label?: string; kind?: 'tool' | 'retrieval' | 'handoff'; arguments: Record<string, unknown>; status: string; result: string; duration_ms?: number }>;
   model?: { id: string; name: string; display_name: string; provider: string; simulated: boolean };
+  flow?: FlowRun;
   trace_id: string;
   conversation_id: string;
   message_id: string;
@@ -89,6 +99,8 @@ export type WorkbenchSummary = {
 };
 export type AppShare = { id: string; name: string; token?: string; expires_at: string | null; max_uses: number | null; use_count: number; is_enabled: boolean; created_at: string };
 
+export type RunPayload = { message?: string; input_values: Record<string, unknown>; conversation_id?: string; confirmed_tool_names?: string[]; resume?: { message_id: string; values: Record<string, unknown> } };
+
 export const fdeApi = {
   templates: () => apiFetch<AppTemplate[]>('/fde/templates'),
   capabilities: () => apiFetch<Record<string, unknown>>('/fde/capabilities'),
@@ -99,8 +111,8 @@ export const fdeApi = {
   get: (id: string) => apiFetch<FDEApp>(`/fde/apps/${id}`),
   save: (id: string, manifest: AppManifest) => apiFetch<FDEApp>(`/fde/apps/${id}/manifest`, { method: 'PUT', body: JSON.stringify({ manifest }) }),
   validate: (id: string) => apiFetch<{ issues: ValidationIssue[]; publish_ready: boolean }>(`/fde/apps/${id}/validate`, { method: 'POST' }),
-  preview: (id: string, payload: { message?: string; input_values: Record<string, unknown> }) => apiFetch<RunResult>(`/fde/apps/${id}/preview`, { method: 'POST', body: JSON.stringify(payload) }),
-  run: (id: string, payload: { message?: string; input_values: Record<string, unknown>; conversation_id?: string; confirmed_tool_names?: string[] }) => apiFetch<RunResult>(`/fde/apps/${id}/run`, { method: 'POST', body: JSON.stringify(payload) }),
+  preview: (id: string, payload: RunPayload) => apiFetch<RunResult>(`/fde/apps/${id}/preview`, { method: 'POST', body: JSON.stringify(payload) }),
+  run: (id: string, payload: RunPayload) => apiFetch<RunResult>(`/fde/apps/${id}/run`, { method: 'POST', body: JSON.stringify(payload) }),
   version: (id: string, releaseNotes = '') => apiFetch<AppVersion>(`/fde/apps/${id}/versions`, { method: 'POST', body: JSON.stringify({ release_notes: releaseNotes }) }),
   /** 固化草稿并发布，校验或门禁失败时不会留下版本；草稿未改动则复用最新版本。 */
   release: (id: string, releaseNotes: string) => apiFetch<FDEApp>(`/fde/apps/${id}/release`, { method: 'POST', body: JSON.stringify({ release_notes: releaseNotes }) }),
@@ -115,10 +127,10 @@ export const fdeApi = {
   createShare: (id: string, payload: { name: string; expires_in_days: number | null; max_uses: number | null }) => apiFetch<AppShare>(`/fde/apps/${id}/shares`, { method: 'POST', body: JSON.stringify(payload) }),
   revokeShare: (id: string, shareId: string) => apiFetch<void>(`/fde/apps/${id}/shares/${shareId}`, { method: 'DELETE' }),
   publicShare: (token: string) => apiFetch<FDEApp>(`/fde/share/${encodeURIComponent(token)}`),
-  runShare: (token: string, payload: { message?: string; input_values: Record<string, unknown>; conversation_id?: string; confirmed_tool_names?: string[] }) => apiFetch<RunResult>(`/fde/share/${encodeURIComponent(token)}/run`, { method: 'POST', body: JSON.stringify(payload) }),
+  runShare: (token: string, payload: RunPayload) => apiFetch<RunResult>(`/fde/share/${encodeURIComponent(token)}/run`, { method: 'POST', body: JSON.stringify(payload) }),
   saveSuite: (id: string, name: string, cases: EvaluationCase[]) => apiFetch<{ id: string; case_count: number }>(`/fde/apps/${id}/evaluation-suite`, { method: 'PUT', body: JSON.stringify({ name, cases: cases.map(({ name: caseName, ...item }) => ({ ...item, name: caseName })) }) }),
   evaluate: (id: string) => apiFetch<{ status: string; passed_count: number; failed_count: number; simulated: boolean; results: EvaluationResult[] }>(`/fde/apps/${id}/evaluate`, { method: 'POST' }),
   myConversations: (id: string) => apiFetch<Array<{ id: string; title: string; updated_at: string }>>(`/fde/apps/${id}/my-conversations`),
-  conversation: (id: string) => apiFetch<{ id: string; app_id: string; title: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: Citation[]; input_values: Record<string, unknown>; created_at: string }> }>(`/fde/conversations/${id}`),
+  conversation: (id: string) => apiFetch<{ id: string; app_id: string; title: string; messages: Array<{ id: string; role: 'user' | 'assistant'; content: string; citations: Citation[]; input_values: Record<string, unknown>; created_at: string; flow_waiting?: FlowWaiting | null }> }>(`/fde/conversations/${id}`),
   feedback: (messageId: string, rating: 1 | -1, comment = '') => apiFetch<{ ok: boolean }>(`/fde/messages/${messageId}/feedback`, { method: 'POST', body: JSON.stringify({ rating, comment }) }),
 };

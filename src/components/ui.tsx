@@ -1,7 +1,6 @@
 import {
   AlertCircle, BookOpen, Bot, CheckCircle2, Headset, Info, LoaderCircle, Megaphone, MessageSquare, NotebookPen, PenLine,
-  ShieldCheck, Sparkles, TriangleAlert, X, type LucideIcon,
-} from 'lucide-react';
+  ShieldCheck, Sparkles, TriangleAlert, X, type LucideIcon, Workflow } from 'lucide-react';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type PropsWithChildren, type ReactNode } from 'react';
 import { C } from '../theme';
 
@@ -18,7 +17,7 @@ const TEMPLATE_ICON: Record<string, [LucideIcon, string]> = {
 
 export function appVisual(templateKey: string | undefined, type?: string): [LucideIcon, string] {
   if (templateKey && TEMPLATE_ICON[templateKey]) return TEMPLATE_ICON[templateKey];
-  return type === 'agent' ? [Bot, C.teal] : [MessageSquare, C.primary];
+  return type === 'agent' ? [Bot, C.teal] : type === 'chatflow' ? [Workflow, C.primary] : [MessageSquare, C.primary];
 }
 
 export function AppTile({ templateKey, type, size = 'md' }: { templateKey?: string; type?: string; size?: 'sm' | 'md' | 'lg' }) {

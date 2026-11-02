@@ -12,7 +12,7 @@ from tests.test_observability import content_app, priced_mock_llm
 async def test_confirmed_rerun_replaces_pending_reply_instead_of_adding_a_turn(client: AsyncClient, monkeypatch) -> None:
     seen_history: list[int] = []
 
-    async def fake_execute(session, manifest, *, message, input_values, history, workspace_id, confirmed_tool_names, spans) -> dict[str, Any]:
+    async def fake_execute(session, manifest, *, message, input_values, history, workspace_id, confirmed_tool_names, spans, **_flow: Any) -> dict[str, Any]:
         seen_history.append(len(history))
         confirmed = bool(confirmed_tool_names)
         return {

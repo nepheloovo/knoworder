@@ -9,7 +9,7 @@ import { C } from '../theme';
 
 type Patch = (patch: Partial<AppManifest>) => void;
 
-function Section({ icon, title, extra, children, defaultOpen = true }: PropsWithChildren<{ icon: ReactNode; title: ReactNode; extra?: ReactNode; defaultOpen?: boolean }>) {
+export function Section({ icon, title, extra, children, defaultOpen = true }: PropsWithChildren<{ icon: ReactNode; title: ReactNode; extra?: ReactNode; defaultOpen?: boolean }>) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <section style={{ borderBottom: '1px solid var(--border)', padding: '14px 0' }}>
@@ -26,7 +26,7 @@ function Section({ icon, title, extra, children, defaultOpen = true }: PropsWith
   );
 }
 
-function ListEditor({ items, placeholder, onChange, max = 20 }: { items: string[]; placeholder: string; onChange: (items: string[]) => void; max?: number }) {
+export function ListEditor({ items, placeholder, onChange, max = 20 }: { items: string[]; placeholder: string; onChange: (items: string[]) => void; max?: number }) {
   const [value, setValue] = useState('');
   const add = () => { const text = value.trim(); if (text && !items.includes(text) && items.length < max) { onChange([...items, text]); setValue(''); } };
   return (
@@ -41,9 +41,9 @@ function toolRefName(tool: ApiToolConfig) {
   return `tool_${tool.id.replace(/-/g, '').slice(0, 10)}`;
 }
 
-const FIELD_TYPES: Record<InputField['type'], string> = { text: '单行文本', textarea: '多行文本', number: '数字', select: '下拉选择', boolean: '开关' };
+export const FIELD_TYPES: Record<InputField['type'], string> = { text: '单行文本', textarea: '多行文本', number: '数字', select: '下拉选择', boolean: '开关' };
 
-function FieldEditor({ fields, onChange }: { fields: InputField[]; onChange: (fields: InputField[], renamed?: { from: string; to: string }) => void }) {
+export function FieldEditor({ fields, onChange }: { fields: InputField[]; onChange: (fields: InputField[], renamed?: { from: string; to: string }) => void }) {
   const [editing, setEditing] = useState<{ index: number; field: InputField } | null>(null);
   const keyValid = editing ? /^[a-z][a-z0-9_]*$/.test(editing.field.key) && !fields.some((item, index) => item.key === editing.field.key && index !== editing.index) : true;
   const save = () => {
@@ -140,6 +140,7 @@ function PromptEditor({ value, fields, onChange, variables = true }: { value: st
   );
 }
 
+/** 简易应用与 Agent 的完整配置；Chat Flow 只用其中的全局部分（默认模型、全局提示词、开始表单、对话体验与安全）。 */
 export function AppConfigForm({ manifest, patch, templates, models, knowledge, tools }: {
   manifest: AppManifest;
   patch: Patch;
@@ -154,6 +155,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
   const llms = models.filter((item) => item.model_type === 'llm' && item.is_enabled);
   const retrieval = retrievalConfig(manifest);
   const isAgent = manifest.type === 'agent';
+  const isFlow = manifest.type === 'chatflow';
   const externalTools = manifest.tools.filter((tool) => tool.tool_id);
   const template = templates.find((item) => item.key === manifest.template_key);
   const kbById = new Map(knowledge.map((item) => [item.id, item]));
@@ -177,7 +179,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
       </Section>
 
       <Section icon={<Bot size={16} />} title="模型与提示词">
-        <Field label="对话模型" required hint={isAgent ? '需支持工具调用' : undefined}>
+        <Field label={isFlow ? '默认模型' : '对话模型'} required hint={isAgent ? '需支持工具调用' : isFlow ? 'AI 节点未单独指定模型时使用' : undefined}>
           <select className="select" value={manifest.llm_model_id ?? ''} onChange={(event) => patch({ llm_model_id: event.target.value || null })}>
             <option value="">请选择</option>
             {llms.map((item) => <option key={item.id} value={item.id}>{item.display_name} · {item.provider}{item.provider === 'mock' ? '（测试替身）' : ''}{item.connection_status === 'error' ? '（连接异常）' : ''}</option>)}
@@ -187,12 +189,12 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
           <Field label="温度" hint="越低越稳定"><Slider label="温度" value={manifest.model.temperature} min={0} max={1.5} step={0.1} onChange={(value) => patch({ model: { ...manifest.model, temperature: value } })} /></Field>
           <Field label="回复上限" hint="tokens"><Slider label="回复上限" value={manifest.model.max_tokens} min={256} max={16384} step={256} onChange={(value) => patch({ model: { ...manifest.model, max_tokens: value } })} /></Field>
         </div>
-        <Field label={isAgent ? '角色与工作方式' : '系统提示词'} hint={isAgent ? '写清楚何时检索、何时用哪个工具、何时转人工' : '可引用表单变量'}>
-          <PromptEditor value={manifest.system_prompt} fields={manifest.input_fields} variables={!isAgent} onChange={(system_prompt) => patch({ system_prompt })} />
+        <Field label={isAgent ? '角色与工作方式' : isFlow ? '全局提示词' : '系统提示词'} hint={isAgent ? '写清楚何时检索、何时用哪个工具、何时转人工' : isFlow ? '拼接在每个 AI 节点的系统提示词前，写通用的身份和规范' : '可引用表单变量'}>
+          <PromptEditor value={manifest.system_prompt} fields={manifest.input_fields} variables={!isAgent && !isFlow} onChange={(system_prompt) => patch({ system_prompt })} />
         </Field>
       </Section>
 
-      <Section icon={<BookOpen size={16} />} title="知识库" extra={<Tag>{manifest.knowledge_base_ids.length} 个</Tag>}>
+      {!isFlow ? <Section icon={<BookOpen size={16} />} title="知识库" extra={<Tag>{manifest.knowledge_base_ids.length} 个</Tag>}>
         {template?.knowledge_bases.required && !manifest.knowledge_base_ids.length ? <div style={{ marginBottom: 8 }}><Notice tone="warn">「{template.name}」场景需要至少关联一个知识库才能发布。</Notice></div> : null}
         <div className="col" style={{ gap: 6 }}>
           {manifest.knowledge_base_ids.map((id) => {
@@ -220,7 +222,7 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
             </Field>
           ) : null}
         </div>
-      </Section>
+      </Section> : null}
 
       {isAgent ? (
         <Section icon={<Wrench size={16} />} title="工具" extra={<button type="button" className="btn sm" onClick={() => setToolOpen(true)}><Plus size={13} />添加</button>}>
@@ -253,7 +255,8 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
           </div>
         </Section>
       ) : (
-        <Section icon={<FormInput size={16} />} title="表单输入" extra={<Tag>{manifest.input_fields.length} 个字段</Tag>}>
+        <Section icon={<FormInput size={16} />} title={isFlow ? '开始表单' : '表单输入'} extra={<Tag>{manifest.input_fields.length} 个字段</Tag>}>
+          {isFlow ? <p className="faint" style={{ marginBottom: 8 }}>对话开始时让用户填写，节点里用 {'{{start.变量名}}'} 引用；流程中途需要信息时用「表单输入」节点。</p> : null}
           <FieldEditor fields={manifest.input_fields} onChange={(fields, renamed) => patch({
             input_fields: fields,
             ...(renamed ? { system_prompt: manifest.system_prompt.split(`{{${renamed.from}}}`).join(`{{${renamed.to}}}`) } : {}),
@@ -267,15 +270,17 @@ export function AppConfigForm({ manifest, patch, templates, models, knowledge, t
         <div className="col" style={{ gap: 10 }}>
           <div className="row"><span className="grow">多轮记忆<div className="faint">携带最近 {manifest.memory.max_turns} 轮对话</div></span><Switch on={manifest.memory.enabled} onChange={(value) => patch({ memory: { ...manifest.memory, enabled: value } })} label="多轮记忆" /></div>
           {manifest.memory.enabled ? <Field label="携带轮数"><Slider label="携带轮数" value={manifest.memory.max_turns} min={1} max={50} onChange={(value) => patch({ memory: { ...manifest.memory, max_turns: value } })} /></Field> : null}
-          {!isAgent ? <div className="row"><span className="grow">输出格式</span><select className="select sm" style={{ width: 140 }} value={manifest.output.format} onChange={(event) => patch({ output: { ...manifest.output, format: event.target.value as AppManifest['output']['format'], json_schema: event.target.value === 'json' ? manifest.output.json_schema ?? null : null } })}><option value="markdown">Markdown</option><option value="text">纯文本</option><option value="json">JSON</option></select></div> : null}
+          {!isAgent && !isFlow ? <div className="row"><span className="grow">输出格式</span><select className="select sm" style={{ width: 140 }} value={manifest.output.format} onChange={(event) => patch({ output: { ...manifest.output, format: event.target.value as AppManifest['output']['format'], json_schema: event.target.value === 'json' ? manifest.output.json_schema ?? null : null } })}><option value="markdown">Markdown</option><option value="text">纯文本</option><option value="json">JSON</option></select></div> : null}
         </div>
       </Section>
 
       <Section icon={<Shield size={16} />} title="安全与合规" defaultOpen={false}>
         <div className="col" style={{ gap: 10 }}>
+          {!isFlow ? <>
           <div className="row"><span className="grow">回答必须附引用</span><Switch on={manifest.guardrails.require_citations} onChange={(value) => patch({ guardrails: { ...manifest.guardrails, require_citations: value } })} label="必须引用" /></div>
           <div className="row"><span className="grow">检索无依据时拒答<div className="faint">{isAgent && manifest.agent.knowledge_mode === 'tool' ? '工具模式下由提示词约束 Agent 行为' : '不调用模型，直接回复无依据'}</div></span><Switch on={manifest.guardrails.refuse_without_evidence} onChange={(value) => patch({ guardrails: { ...manifest.guardrails, refuse_without_evidence: value } })} label="拒答" /></div>
           {!isAgent ? <div className="row"><span className="grow">命中禁止话题时转人工</span><Switch on={manifest.guardrails.human_handoff} onChange={(value) => patch({ guardrails: { ...manifest.guardrails, human_handoff: value } })} label="转人工" /></div> : null}
+          </> : null}
           <Field label="禁止话题" hint="回答中出现即拦截"><ListEditor items={manifest.guardrails.blocked_topics} max={30} placeholder="例如：具体项目报价" onChange={(blocked_topics) => patch({ guardrails: { ...manifest.guardrails, blocked_topics } })} /></Field>
           <Field label="最大输出长度" hint="字"><Slider label="最大输出长度" value={manifest.guardrails.max_output_chars} min={100} max={50000} step={100} onChange={(value) => patch({ guardrails: { ...manifest.guardrails, max_output_chars: value } })} /></Field>
         </div>

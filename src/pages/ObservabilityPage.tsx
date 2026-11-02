@@ -1,7 +1,6 @@
 import {
   Activity, AlertTriangle, ArrowRight, Bot, BookOpen, CheckCircle2, ChevronDown, ChevronRight, CircleDollarSign, Database, FileText, Gauge,
-  Headset, Layers3, MessageSquareText, RefreshCw, Search, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Wrench, XCircle, type LucideIcon,
-} from 'lucide-react';
+  Headset, Layers3, MessageSquareText, RefreshCw, Search, ShieldAlert, Sparkles, ThumbsDown, ThumbsUp, Wrench, XCircle, type LucideIcon, Workflow } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { apiFetch, errorMessage, type ApiKnowledgeBase } from '../api/client';
@@ -34,6 +33,7 @@ const SPAN_META: Record<string, { label: string; icon: LucideIcon; color: string
   guardrail: { label: '护栏', icon: ShieldAlert, color: C.rose },
   harness: { label: 'Harness', icon: ShieldAlert, color: C.danger },
   error: { label: '错误', icon: XCircle, color: C.danger },
+  flow: { label: '流程节点', icon: Workflow, color: C.slate },
 };
 
 function RunStatus({ status, handoff }: { status: string; handoff?: boolean }) {

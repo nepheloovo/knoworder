@@ -7,7 +7,7 @@ import { AppTile, ConfirmModal, Empty, Field, Loading, Modal, Notice, Spinner, T
 import { useAuth } from '../auth';
 import { appStatus, blankManifest, defaultLlm, manifestFromTemplate, sceneOf, SCENES, TYPE_META, type AppType } from '../lib/apps';
 
-const TYPE_ICON: Record<AppType | 'chatflow', ReactNode> = {
+const TYPE_ICON: Record<AppType, ReactNode> = {
   simple: <MessageSquare size={18} />,
   agent: <Bot size={18} />,
   chatflow: <Workflow size={18} />,
@@ -72,15 +72,15 @@ function CreateModal({ open, onClose, templates, options }: { open: boolean; onC
       <div className="seg" style={{ marginBottom: 18 }}>
         <button className={mode === 'template' ? 'active' : ''} onClick={() => setMode('template')}><LayoutTemplate size={14} />从业务模板</button>
         <button className={mode === 'blank' ? 'active' : ''} onClick={() => setMode('blank')}><Plus size={14} />空白应用</button>
-        <button className={mode === 'ai' ? 'active' : ''} onClick={() => { setMode('ai'); setPlan(null); }}><Sparkles size={14} />AI 帮我搭建</button>
+        <button className={mode === 'ai' ? 'active' : ''} disabled={type === 'chatflow'} title={type === 'chatflow' ? 'Chat Flow 请从业务模板或空白流程开始' : undefined} onClick={() => { setMode('ai'); setPlan(null); }}><Sparkles size={14} />AI 帮我搭建</button>
       </div>
       {!llm ? <div style={{ marginBottom: 12 }}><Notice tone="warn" title="还没有可用的对话模型" action={me?.role === 'admin' ? <Link className="btn sm" to="/tools?tab=models">去接入</Link> : undefined}>{me?.role === 'admin' ? '先接入一个 LLM，应用创建后也可再选择。' : '请联系管理员在「集成 → 模型」接入 LLM，应用创建后也可再选择。'}</Notice></div> : null}
 
       <Field label="应用类型" required>
         <div className="grid c3" style={{ gap: 10 }}>
           {(['simple', 'agent', 'chatflow'] as const).map((key) => (
-            <button key={key} type="button" disabled={key === 'chatflow'} className={`method-card ${type === key ? 'active' : ''} ${key === 'chatflow' ? 'coming-soon' : ''}`} style={{ flexDirection: 'column' }} onClick={() => { if (key !== 'chatflow') { setType(key); setPlan(null); } }}>
-              <div className="row" style={{ color: 'var(--primary)' }}>{TYPE_ICON[key]}<h4 style={{ color: 'var(--text-1)' }}>{TYPE_META[key].name}</h4>{key === 'chatflow' ? <Tag>即将上线</Tag> : null}</div>
+            <button key={key} type="button" className={`method-card ${type === key ? 'active' : ''}`} style={{ flexDirection: 'column' }} onClick={() => { setType(key); setPlan(null); if (key === 'chatflow' && mode === 'ai') setMode('template'); }}>
+              <div className="row" style={{ color: 'var(--primary)' }}>{TYPE_ICON[key]}<h4 style={{ color: 'var(--text-1)' }}>{TYPE_META[key].name}</h4></div>
               <p>{TYPE_META[key].desc}</p>
               <p style={{ marginTop: 4, color: 'var(--text-2)' }}>例：{TYPE_META[key].examples}</p>
             </button>
@@ -197,8 +197,7 @@ export function AppsPage() {
       <div className="row wrap" style={{ marginBottom: 16 }}>
         <div className="seg">
           <button className={type === 'all' ? 'active' : ''} onClick={() => setType('all')}>全部</button>
-          {(['simple', 'agent'] as const).map((key) => <button key={key} className={type === key ? 'active' : ''} onClick={() => setType(key)}>{TYPE_ICON[key]}{TYPE_META[key].name}</button>)}
-          <button disabled className="coming-soon" title="即将上线"><Workflow size={14} />Chat Flow</button>
+          {(['simple', 'agent', 'chatflow'] as const).map((key) => <button key={key} className={type === key ? 'active' : ''} onClick={() => setType(key)}>{TYPE_ICON[key]}{TYPE_META[key].name}</button>)}
         </div>
         <select className="select sm" style={{ width: 150 }} aria-label="业务场景" value={scene} onChange={(event) => setScene(event.target.value)}>
           <option value="all">全部场景</option>{Object.entries(SCENES).map(([key, item]) => <option key={key} value={key}>{item.name}</option>)}
