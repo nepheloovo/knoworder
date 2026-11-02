@@ -174,6 +174,13 @@ const CATALOG_PROVIDERS: Record<CatalogProvider, { name: string; desc: string; k
   deepseek: { name: 'DeepSeek', desc: 'DeepSeek 官方 API', keyUrl: 'https://platform.deepseek.com/api_keys' },
 };
 const TYPE_TABS: Array<[ApiModelConfig['model_type'] | 'all', string]> = [['all', '全部'], ['llm', '对话'], ['embedding', '索引'], ['rerank', '重排'], ['ocr', '图片理解']];
+/** 服务商目录给的是每 token 单价（如 0.00000027），换算成更好读的每百万 token 价格。 */
+function pricePerMillion(price: string) {
+  const value = Number(price);
+  if (!Number.isFinite(value)) return price;
+  return value === 0 ? '免费' : `$${Number((value * 1_000_000).toPrecision(4))}/M`;
+}
+
 const catalogKey = (model: Pick<ApiOpenRouterCatalogModel, 'model_type' | 'id'>) => `${model.model_type}:${model.id}`;
 
 /** 先选服务商、填一次 Key，再从读取到的模型目录里勾选要接入的模型。 */
@@ -260,7 +267,7 @@ function ProviderConnect({ value, existing, onClose, onDone }: { value: { provid
                 <input type="checkbox" disabled={has} checked={selected.includes(key)} onChange={(event) => setSelected(event.target.checked ? [...selected, key] : selected.filter((item) => item !== key))} />
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="row" style={{ gap: 6 }}><strong style={{ fontSize: 13 }} className="ellipsis">{model.name}</strong><Tag>{MODEL_TYPES[model.model_type].split(' ')[0]}</Tag>{model.is_free ? <Tag tone="green">免费</Tag> : null}{has ? <Tag tone="blue">已接入</Tag> : null}</div>
-                  <div className="faint mono ellipsis">{model.id}{model.context_length ? ` · ${Math.round(model.context_length / 1000)}K 上下文` : ''}{model.prompt_price ? ` · 输入 ${model.prompt_price}` : ''}</div>
+                  <div className="faint mono ellipsis">{model.id}{model.context_length ? ` · ${Math.round(model.context_length / 1000)}K 上下文` : ''}{model.prompt_price ? ` · 输入 ${pricePerMillion(model.prompt_price)}` : ''}</div>
                 </div>
               </label>
             );
