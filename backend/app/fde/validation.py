@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from .flow import form_fields, graph_issues, referenced_model_ids, referenced_tool_ids
 from .manifest import Manifest, Tool, validate_input_value
 from .templates import create_manifest, get_template
 
@@ -111,6 +112,15 @@ def validate_business(
                 issues.append(Issue(path=f"tools.{index}.tool_id", code="tool_invalid", message="所选工具不存在、未启用或不可用"))
     if manifest.type == "agent" and not any(tool.enabled for tool in manifest.tools):
         issues.append(Issue(path="tools", code="agent_tool_required", message="Agent 至少需要一个可用工具", severity="warning"))
+    if manifest.type == "chatflow":
+        issues.extend(Issue.model_validate(item) for item in graph_issues(manifest))
+        model_ids = set(available_model_ids) if available_model_ids is not None else None
+        if model_ids is not None:
+            for model_id in sorted(set(referenced_model_ids(manifest)) - model_ids):
+                issues.append(Issue(path="graph.nodes", code="model_invalid", message=f"流程节点使用的模型不存在或不可用：{model_id}"))
+        if tool_ids is not None:
+            for tool_id in sorted(set(referenced_tool_ids(manifest)) - tool_ids):
+                issues.append(Issue(path="graph.nodes", code="tool_invalid", message=f"流程节点使用的工具不存在、未启用或不可用：{tool_id}"))
     if manifest.agent.long_term_memory:
         issues.append(Issue(path="agent.long_term_memory", code="long_term_memory_unavailable", message="跨会话长期记忆尚未启用，请关闭后发布"))
     return _result(issues)
@@ -119,7 +129,9 @@ def validate_business(
 def validate_inputs(manifest: Manifest, values: Mapping[str, Any]) -> ValidationResult:
     issues: list[Issue] = []
     fields = {field.key: field for field in manifest.input_fields}
-    for key in values.keys() - fields.keys():
+    # Chat Flow 的表单节点字段也可以随请求预先传入（评测用例靠它自动填写表单）
+    flow_keys = {field.key for field in form_fields(manifest)} if manifest.type == "chatflow" else set()
+    for key in values.keys() - fields.keys() - flow_keys:
         issues.append(Issue(path=f"inputs.{key}", code="unknown_input", message=f"未定义的输入字段：{key}"))
     for key, field in fields.items():
         value = values.get(key, field.default)

@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from ...db import get_session
 from ...fde import Manifest, list_templates, manifest_fingerprint, manifest_from_qa_app, validate_for_publish, validate_manifest
 from ...fde.designer import DesignError, design_manifest
+from ...fde.flow import submission_summary
 from ...fde.runtime import estimate_cost, execute_manifest
 from ...models import (
     AppVersion,
@@ -66,11 +67,18 @@ class ReleaseRequest(BaseModel):
     release_notes: str = Field(min_length=1, max_length=4000)
 
 
+class FlowResume(BaseModel):
+    message_id: str = Field(min_length=1, max_length=36)
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunRequest(BaseModel):
     message: str = Field(default="", max_length=12000)
     input_values: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str | None = None
     confirmed_tool_names: list[str] = Field(default_factory=list, max_length=20)
+    # Chat Flow：提交暂停处的表单 / 选择，从该步继续执行
+    resume: FlowResume | None = None
 
 
 class EvaluationCaseRequest(BaseModel):
@@ -185,7 +193,7 @@ async def _save_manifest(session: AsyncSession, app: QAApp, manifest: Manifest) 
 async def capabilities(_context: AuthContext = Depends(get_auth_context)) -> dict[str, Any]:
     return {
         "protocol": "fde.app/v2",
-        "application_types": ["simple", "agent"],
+        "application_types": ["simple", "agent", "chatflow"],
         "workflow": ["discover", "design", "validate", "draft", "preview", "evaluate", "version", "publish", "run", "rollback"],
         "templates": [{"key": item.key, "name": item.name, "knowledge_bases": item.knowledge_bases.model_dump()} for item in list_templates()],
         "endpoints": {
@@ -197,7 +205,7 @@ async def capabilities(_context: AuthContext = Depends(get_auth_context)) -> dic
             "publish": "POST /api/v1/fde/apps/{app_id}/publish",
             "run": "POST /api/v1/fde/apps/{app_id}/run",
         },
-        "limits": {"external_http_tools": True, "agent_tool_loop": True, "chatflow": False, "streaming_fde_run": False, "evaluation_score": "binary"},
+        "limits": {"external_http_tools": True, "agent_tool_loop": True, "chatflow": True, "streaming_fde_run": False, "evaluation_score": "binary"},
     }
 
 
@@ -337,7 +345,10 @@ async def my_conversation(conversation_id: str, context: AuthContext = Depends(g
         "app_id": conversation.app_id,
         "title": conversation.title,
         "messages": [
-            {"id": item.id, "role": item.role, "content": item.content, "citations": item.citations, "input_values": item.input_values, "created_at": item.created_at}
+            {
+                "id": item.id, "role": item.role, "content": item.content, "citations": item.citations, "input_values": item.input_values, "created_at": item.created_at,
+                "flow_waiting": (item.flow_state or {}).get("waiting_payload"),
+            }
             for item in messages
         ],
     }
@@ -580,6 +591,12 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
             raise HTTPException(status_code=404, detail="会话不存在")
         history = list(await session.scalars(select(Message).where(Message.conversation_id == conversation.id).order_by(Message.created_at)))
     query = payload.message.strip() or next(iter(payload.input_values.values()), app.name)
+    paused: Message | None = None
+    if payload.resume:
+        paused = next((item for item in history if item.id == payload.resume.message_id and item.role == "assistant"), None)
+        if manifest.type != "chatflow" or paused is None or not paused.flow_state:
+            raise HTTPException(status_code=409, detail="这一步已经提交过或已失效，请重新开始")
+        query = submission_summary(paused.flow_state, payload.resume.values)
     # 用户确认副作用工具后会重发同一条消息：替换上一轮「待确认」的回复，而不是在会话里再追加一轮
     awaiting_confirmation: Message | None = None
     if payload.confirmed_tool_names and len(history) >= 2 and history[-2].role == "user" and history[-2].content == str(query) and history[-1].role == "assistant":
@@ -600,6 +617,8 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
             workspace_id=context.workspace_id,
             confirmed_tool_names=set(payload.confirmed_tool_names),
             spans=spans,
+            flow_resume=(paused.flow_state, payload.resume.values) if paused is not None and paused.flow_state and payload.resume else None,
+            interactive=True,
         )
     except Exception as exc:
         # 失败运行同样进入可观测：保留已完成的步骤和错误原因。
@@ -625,12 +644,15 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
         session.add(conversation)
         await session.flush()
     conversation.updated_at = utc_now()
-    assistant_message = Message(conversation_id=conversation.id, role="assistant", content=result["content"], citations=result["citations"], input_tokens=result["tokens"]["input"], output_tokens=result["tokens"]["output"], duration_ms=result["duration_ms"], simulated=result["simulated"], output_json=result["output_json"], app_version_id=version_id)
+    flow_state = result.pop("flow_state", None)
+    assistant_message = Message(conversation_id=conversation.id, role="assistant", content=result["content"], citations=result["citations"], input_tokens=result["tokens"]["input"], output_tokens=result["tokens"]["output"], duration_ms=result["duration_ms"], simulated=result["simulated"], output_json=result["output_json"], app_version_id=version_id, flow_state=flow_state)
+    if paused is not None:
+        paused.flow_state = None
     if awaiting_confirmation is not None:
         await session.delete(awaiting_confirmation)
         session.add(assistant_message)
     else:
-        user_message = Message(conversation_id=conversation.id, role="user", content=str(query), input_values=payload.input_values, app_version_id=version_id)
+        user_message = Message(conversation_id=conversation.id, role="user", content=str(query), input_values=payload.resume.values if payload.resume else payload.input_values, app_version_id=version_id)
         session.add_all([user_message, assistant_message])
     await session.flush()
     model_info = result.get("model") or {}
@@ -648,6 +670,7 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
             "citation_count": len(result["citations"]),
             "pricing": model_info.get("pricing"),
             "provider": model_info.get("provider"),
+            **({"flow_status": result["flow"]["status"]} if result.get("flow") else {}),
         },
     )
     session.add(log)
@@ -683,7 +706,7 @@ async def _public_share(token: str, session: AsyncSession) -> tuple[AppShare, QA
 def _public_manifest(manifest: Manifest) -> dict[str, Any]:
     """匿名访问只需要渲染界面的字段，不暴露提示词、模型、知识库与工具配置。"""
     data = manifest.model_dump(mode="json")
-    data.update(system_prompt="", llm_model_id=None, knowledge_base_ids=[], tools=[])
+    data.update(system_prompt="", llm_model_id=None, knowledge_base_ids=[], tools=[], graph=None)
     data["guardrails"] = {**data["guardrails"], "blocked_topics": []}
     return data
 

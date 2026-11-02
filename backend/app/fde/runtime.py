@@ -407,9 +407,16 @@ async def execute_manifest(
     workspace_id: str,
     confirmed_tool_names: set[str] | None = None,
     spans: list[dict[str, Any]] | None = None,
+    flow_resume: tuple[dict[str, Any], dict[str, Any]] | None = None,
+    interactive: bool = False,
 ) -> dict[str, Any]:
     started = monotonic()
     manifest = manifest if isinstance(manifest, Manifest) else Manifest.model_validate(manifest)
+    if manifest.type == "chatflow" and flow_resume is not None:
+        from .flow import execute_chatflow
+
+        # 从表单 / 选择处继续：业务输入在流程开始时已经校验过
+        return await execute_chatflow(session, manifest, query="", input_values={}, history=history or [], workspace_id=workspace_id, spans=spans, resume=flow_resume, interactive=interactive)
     values = dict(input_values or {})
     input_result = validate_inputs(manifest, values)
     if not input_result.valid:
@@ -425,6 +432,14 @@ async def execute_manifest(
         raise ValueError("message or input values are required")
     if not manifest.llm_model_id:
         raise ValueError("应用还没有选择对话模型，请在「模型与提示词」中选择后再运行")
+    if manifest.type == "chatflow":
+        from .flow import execute_chatflow
+
+        form_values = {key: value for key, value in values.items() if key not in effective_values}
+        return await execute_chatflow(
+            session, manifest, query=query, input_values={**form_values, **effective_values}, history=history or [],
+            workspace_id=workspace_id, spans=spans, interactive=interactive,
+        )
     model = await session.get(ModelConfig, manifest.llm_model_id)
     if (
         model is None

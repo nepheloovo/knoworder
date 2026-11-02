@@ -256,6 +256,8 @@ class Message(Base, TimestampMixin):
     input_values: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict, nullable=False)
     output_json: Mapped[dict[str, Any] | list[Any] | None] = mapped_column(SAJSON, nullable=True)
     app_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    # Chat Flow 停在表单 / 用户选择时的运行状态；用户提交后清空，防止同一步被重复提交
+    flow_state: Mapped[dict[str, Any] | None] = mapped_column(SAJSON, nullable=True)
     conversation: Mapped[Conversation] = relationship(back_populates="messages")
 
 
