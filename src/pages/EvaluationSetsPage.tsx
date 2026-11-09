@@ -1,7 +1,7 @@
-import { Activity, CheckCircle2, ClipboardCheck, Gavel, Pencil, Play, Plus, Search, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, XCircle } from 'lucide-react';
+import { Activity, CheckCircle2, ClipboardCheck, Gavel, Pencil, Play, Plus, Search, SlidersHorizontal, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { apiFetch, errorMessage, type ApiEvaluationCase, type ApiEvaluationRun, type ApiEvaluationSet, type ApiModelConfig } from '../api/client';
+import { apiFetch, errorMessage, type ApiEvaluationCase, type ApiEvaluationMetric, type ApiEvaluationRun, type ApiEvaluationSet, type ApiKnowledgeBase, type ApiModelConfig, type ApiScoringConfig } from '../api/client';
 import { evalApi, runWithProgress, splitList, type CaseDraft } from '../api/evaluation';
 import { fdeApi, type FDEApp } from '../api/fde';
 import { CHANNEL_LABEL } from '../api/observability';
@@ -16,6 +16,9 @@ const CASE_TYPE: Record<ApiEvaluationCase['case_type'], { label: string; tone: s
 };
 
 type ResultRow = ApiEvaluationRun['results'][number];
+
+const metricText = (metric: ApiEvaluationMetric, value: number) => (metric.key === 'mrr' ? value.toFixed(2) : `${Math.round(value * 1000) / 10}%`);
+const hasGold = (tags: string[]) => tags.some((tag) => tag === '应拒答' || /^(doc|tool|slot):/.test(tag));
 
 export function EvaluationSetsPage() {
   const toast = useToast();
@@ -102,6 +105,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [judging, setJudging] = useState(false);
+  const [scoringOpen, setScoringOpen] = useState(false);
   const [meta, setMeta] = useState({ name: set.name, description: set.description });
   const [filter, setFilter] = useState<'all' | 'needs_standard' | 'failed'>('all');
   const cases = set.cases ?? [];
@@ -143,6 +147,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
         </div>
         <label className="row faint" style={{ fontSize: 13 }}>发布门禁<Switch on={set.is_release_gate} label="发布门禁" onChange={async (value) => { try { await evalApi.update(set.id, { is_release_gate: value }); toast(value ? '已设为发布门禁：最近一次评测全部通过才能发布' : '已取消门禁'); await onChanged(); } catch (caught) { toast(errorMessage(caught), 'error'); } }} /></label>
         <button className="btn" title={set.judge.model_id ? `及格线 ${set.judge.pass_score} 分` : '只按关键词、引用等规则判定'} onClick={() => setJudging(true)}><Gavel size={15} />{set.judge.model_id ? 'LLM 评委已开启' : 'LLM 评委'}</button>
+        <button className="btn" title="选择评测时使用的知识库和检索方式" onClick={() => setScoringOpen(true)}><SlidersHorizontal size={15} />判分设置</button>
         <button className="btn" onClick={() => setAdding(true)}><Plus size={15} />新增 Case</button>
         <button className="btn primary" disabled={running || !set.ready_count} title={!set.ready_count ? '没有可运行的 Case' : set.needs_standard_count ? `${set.needs_standard_count} 条待补标准的 Case 不参与本次运行` : undefined} onClick={() => void run()}>{running ? <Spinner /> : <Play size={15} />}{running ? (progress ? `运行中 ${progress.done}/${progress.total}` : '运行中') : interrupted ? '重新运行' : '运行评测'}</button>
       </div>
@@ -153,6 +158,19 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
         <div className="card stat"><div className="label">待补标准</div><div className="value" style={{ color: set.needs_standard_count ? 'var(--orange-text)' : undefined }}>{set.needs_standard_count}</div></div>
         <div className="card stat"><div className="label">{lastRun?.status === 'running' ? '本次进行中' : '最近通过率'}</div><div className="value" style={{ color: lastRun ? (lastRun.failed_count ? 'var(--red)' : 'var(--green)') : undefined }}>{lastRun ? `${Math.round((lastRun.passed_count / Math.max(1, lastRun.passed_count + lastRun.failed_count)) * 100)}%` : '—'}</div>{lastRun ? <div className="faint">{formatTime(lastRun.created_at)}{lastRun.simulated ? ' · 含测试替身' : ''}</div> : null}</div>
       </div>
+      {lastRun?.metrics?.length ? (
+        <div className="grid c4" style={{ marginBottom: 16 }}>
+          {lastRun.metrics.map((metric) => (
+            <div key={metric.key} className="card stat">
+              <div className="label">{metric.label}</div>
+              <div className="value" style={{ color: metric.passed === null ? undefined : metric.passed ? 'var(--green)' : 'var(--red)' }}>{metricText(metric, metric.value)}</div>
+              <div className="faint">{metric.count} 条{metric.target !== null ? ` · 目标 ≥ ${metricText(metric, metric.target)}` : ''}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {lastRun?.answer_unscored ? <div style={{ marginBottom: 12 }}><Notice tone="warn" title={`${lastRun.answer_unscored} 条 Case 的回答内容没有评分`}>通过与否只反映检索、工具和拒答。要判断回答是否正确，请开启 LLM 评委。</Notice></div> : null}
+      {lastRun?.metrics?.length && lastRun.simulated ? <div style={{ marginBottom: 12 }}><Notice tone="warn" title="本次结果来自测试替身">对话走规则演示模式，工具和拒答分数不代表真实模型的水平；语义检索的分数也不可靠，全文检索不受影响。接入真实模型后请重新运行。</Notice></div> : null}
       {running ? (
         <div className="card pad" style={{ marginBottom: 12 }}>
           <div className="row" style={{ marginBottom: 6 }}><Spinner size={14} /><strong className="grow">正在评测{progress ? ` ${progress.done}/${progress.total}` : ''}</strong>{lastRun ? <span className="faint">{lastRun.passed_count} 通过 · {lastRun.failed_count} 未通过</span> : null}</div>
@@ -177,7 +195,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
           <tbody>{visible.map((item) => {
             const type = CASE_TYPE[item.case_type];
             const result = results[item.id];
-            const rules = [item.expected_keywords.length ? `包含：${item.expected_keywords.join('、')}` : '', item.forbidden_keywords.length ? `禁止：${item.forbidden_keywords.join('、')}` : '', item.require_citations ? '须有引用' : '', item.expected_output && !item.expected_keywords.length && !item.forbidden_keywords.length && item.case_type !== 'good' ? '与期望输出一致' : '', item.case_type === 'good' && !item.expected_keywords.length && !item.forbidden_keywords.length && !item.require_citations ? '应用可成功执行' : ''].filter(Boolean);
+            const rules = [item.expected_keywords.length ? `包含：${item.expected_keywords.join('、')}` : '', item.forbidden_keywords.length ? `禁止：${item.forbidden_keywords.join('、')}` : '', item.require_citations ? '须有引用' : '', hasGold(item.tags) ? '按金标判分' : item.expected_output && !item.expected_keywords.length && !item.forbidden_keywords.length && item.case_type !== 'good' ? '与期望输出一致' : '', item.case_type === 'good' && !item.expected_keywords.length && !item.forbidden_keywords.length && !item.require_citations ? '应用可成功执行' : ''].filter(Boolean);
             return (
               <tr key={item.id} className="clickable" onClick={() => setEditing(item)}>
                 <td><Tag tone={type.tone}><type.icon size={12} />{type.label}</Tag></td>
@@ -194,6 +212,7 @@ function SetDetail({ set, onChanged, autoRun, onAutoRunStarted }: { set: ApiEval
       <CaseDrawer set={set} value={editing} result={editing ? results[editing.id] : undefined} onClose={() => setEditing(null)} onSaved={async () => { setEditing(null); await onChanged(); }} />
       <CaseModal open={adding} onClose={() => setAdding(false)} onSubmit={async (draft) => { await evalApi.createCase(set.id, draft); toast('Case 已新增'); setAdding(false); await onChanged(); }} />
       <JudgeModal open={judging} set={set} onClose={() => setJudging(false)} onSaved={async () => { setJudging(false); await onChanged(); }} />
+      <ScoringModal open={scoringOpen} set={set} onClose={() => setScoringOpen(false)} onSaved={async () => { setScoringOpen(false); await onChanged(); }} />
       <Modal open={renaming} title="编辑评测集" onClose={() => setRenaming(false)} footer={<><button className="btn" onClick={() => setRenaming(false)}>取消</button><button className="btn primary" disabled={!meta.name.trim()} onClick={async () => { try { await evalApi.update(set.id, meta); setRenaming(false); await onChanged(); } catch (caught) { toast(errorMessage(caught), 'error'); } }}>保存</button></>}>
         <Field label="名称" required><input className="input" value={meta.name} onChange={(event) => setMeta({ ...meta, name: event.target.value })} /></Field>
         <Field label="说明"><textarea className="textarea" value={meta.description} onChange={(event) => setMeta({ ...meta, description: event.target.value })} /></Field>
@@ -277,6 +296,53 @@ function CaseModal({ open, onClose, onSubmit }: { open: boolean; onClose: () => 
       <StandardFields draft={draft} setDraft={(patch) => setDraft({ ...draft, ...patch })} caseType="manual" />
       <Field label="标签" hint="逗号分隔"><input className="input" value={draft.tags} onChange={(event) => setDraft({ ...draft, tags: event.target.value })} /></Field>
       {!hasStandard ? <Notice tone="warn">未填写任何判定标准时，该 Case 为「待补标准」，不能参与评测。</Notice> : null}
+    </Modal>
+  );
+}
+
+/** 判分设置：评测时改用指定的知识库和检索方式，只影响评测，不改应用配置 */
+function ScoringModal({ open, set, onClose, onSaved }: { open: boolean; set: ApiEvaluationSet; onClose: () => void; onSaved: () => Promise<void> }) {
+  const toast = useToast();
+  const [bases, setBases] = useState<ApiKnowledgeBase[] | null>(null);
+  const [draft, setDraft] = useState<ApiScoringConfig>(set.scoring);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setDraft(set.scoring);
+    apiFetch<ApiKnowledgeBase[]>('/knowledge-bases').then(setBases).catch((caught) => toast(errorMessage(caught), 'error'));
+  }, [open, set.scoring, toast]);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await evalApi.update(set.id, { scoring: draft });
+      toast('判分设置已保存，下次运行评测生效');
+      await onSaved();
+    } catch (caught) {
+      toast(errorMessage(caught), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <Modal open={open} title="判分设置" icon={<SlidersHorizontal size={18} />} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>取消</button><button className="btn primary" disabled={saving} onClick={() => void save()}>{saving ? <Spinner /> : null}保存</button></>}>
+      <p className="muted" style={{ marginBottom: 12 }}>带 doc:、tool:、slot:、应拒答 标签的 Case 按这些金标判分。这里的设置只在评测时生效，不会修改应用。</p>
+      {!bases ? <Loading /> : <>
+        <Field label="评测知识库" hint="文件名以 doc: 标签里的编号开头才算命中">
+          <select className="select" value={draft.knowledge_base_id ?? ''} onChange={(event) => setDraft({ ...draft, knowledge_base_id: event.target.value || null })}>
+            <option value="">跟随应用配置</option>
+            {bases.map((base) => <option key={base.id} value={base.id}>{base.name}</option>)}
+          </select>
+        </Field>
+        <Field label="检索方式">
+          <select className="select" value={draft.retrieval_mode} onChange={(event) => setDraft({ ...draft, retrieval_mode: event.target.value as ApiScoringConfig['retrieval_mode'] })}>
+            <option value="">跟随应用配置</option>
+            <option value="semantic">语义</option>
+            <option value="fulltext">全文</option>
+            <option value="hybrid">混合</option>
+          </select>
+        </Field>
+      </>}
     </Modal>
   );
 }

@@ -362,6 +362,15 @@ export interface ApiLogSummary {
   average_duration_ms: number | null;
 }
 
+export interface ApiEvaluationMetric {
+  key: string;
+  label: string;
+  value: number;
+  count: number;
+  target: number | null;
+  passed: boolean | null;
+}
+
 export interface ApiEvaluationRun {
   id: string;
   status: 'running' | 'success' | 'failed';
@@ -373,6 +382,10 @@ export interface ApiEvaluationRun {
   /** 分步运行的进度：已评测 / 本次应评测的 Case 数。 */
   done_count?: number;
   total_count?: number;
+  /** 按用例金标算出的指标；用例没有金标标签时为空。 */
+  metrics?: ApiEvaluationMetric[];
+  /** 需要评委判定回答内容、但本次没有配评委的 Case 数。 */
+  answer_unscored?: number;
   results: Array<{
     case_id: string;
     name: string;
@@ -425,6 +438,11 @@ export interface ApiJudgeConfig {
   pass_score: number;
 }
 
+export interface ApiScoringConfig {
+  knowledge_base_id: string | null;
+  retrieval_mode: '' | 'semantic' | 'fulltext' | 'hybrid';
+}
+
 export interface ApiEvaluationSet {
   id: string;
   app_id: string;
@@ -433,6 +451,7 @@ export interface ApiEvaluationSet {
   description: string;
   is_release_gate: boolean;
   judge: ApiJudgeConfig;
+  scoring: ApiScoringConfig;
   default_rubric: string;
   case_count: number;
   ready_count: number;
