@@ -19,7 +19,7 @@ from sqlalchemy.orm import selectinload
 from ..models import Customer, InventoryBalance, Location, OrderItem, Product, SalesOrder, Sku
 from .service import AFTER_SALE_KIND_LABEL, ORDER_STATUS_LABEL, BusinessError, create_after_sale, yuan
 
-ORDER_NO = re.compile(r"SO\d{6,}", re.IGNORECASE)
+ORDER_NO = re.compile(r"(?:SO|E)\d{6,}", re.IGNORECASE)
 HANDOFF = re.compile(r"人工|转接|投诉|赔偿|客服经理|12315")
 APPLY_AFTER_SALE = re.compile(r"(我要|我想|想要|帮我|申请|给我).{0,8}(退货|退款|换货)")
 LOGISTICS = re.compile(r"物流|快递|到哪|发货了吗|发货没|什么时候到|单号")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,11 +12,12 @@ from sqlalchemy.orm import selectinload
 
 from ...db import get_session
 from ...fde import Manifest, manifest_fingerprint, manifest_from_qa_app
-from ...fde.runtime import execute_manifest
+from ...fde.runtime import _retrieval_config, execute_manifest
 from ...providers import build_gateway
 from ...providers.base import ModelGateway
 from ...services.eval_design import DESIGN_RULES, MAX_CASES, default_rule_keys, design_cases, template_cases
 from ...services.eval_judge import DEFAULT_PASS_SCORE, DEFAULT_RUBRIC, judge_output
+from ...services.eval_scoring import EvalToolset, needs_answer_judge, parse_gold, ranked_documents, score_case, summarize
 from ...models import (
     AppVersion,
     AuditEvent,
@@ -23,6 +25,7 @@ from ...models import (
     EvaluationCase,
     EvaluationRun,
     EvaluationSuite,
+    KnowledgeBase,
     Message,
     ModelConfig,
     ModelType,
@@ -30,6 +33,7 @@ from ...models import (
     QAApp,
     QueryLog,
     RunStatus,
+    ServiceConfig,
 )
 from ...security import AuthContext, require_roles
 
@@ -58,11 +62,26 @@ class JudgeConfig(BaseModel):
     pass_score: float = Field(default=DEFAULT_PASS_SCORE, ge=1, le=5)
 
 
+class ScoringConfig(BaseModel):
+    """评测时使用的知识库和检索方式；留空跟随应用配置，只影响评测，不改应用。"""
+
+    knowledge_base_id: str | None = Field(default=None, max_length=36)
+    retrieval_mode: Literal["", "semantic", "fulltext", "hybrid"] = ""
+
+
 class EvaluationSetUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = Field(default=None, max_length=4000)
     is_release_gate: bool | None = None
     judge: JudgeConfig | None = None
+    scoring: ScoringConfig | None = None
+
+
+@dataclass(slots=True)
+class SuiteScoring:
+    knowledge_bases: list[KnowledgeBase]
+    mode: str
+    use_tools: bool
 
 
 class EvaluationCaseCreate(BaseModel):
@@ -184,7 +203,8 @@ async def _set_payload(session: AsyncSession, suite: EvaluationSuite, app: QAApp
         "name": suite.name,
         "description": suite.description,
         "is_release_gate": suite.is_release_gate,
-        "judge": {"model_id": None, "rubric": "", "pass_score": DEFAULT_PASS_SCORE, **(suite.judge_config or {})},
+        "judge": {"model_id": None, "rubric": "", "pass_score": DEFAULT_PASS_SCORE, **{key: value for key, value in (suite.judge_config or {}).items() if key != "scoring"}},
+        "scoring": {"knowledge_base_id": None, "retrieval_mode": "", **((suite.judge_config or {}).get("scoring") or {})},
         "default_rubric": DEFAULT_RUBRIC,
         "case_count": case_count,
         "ready_count": ready_count,
@@ -201,6 +221,7 @@ async def _set_payload(session: AsyncSession, suite: EvaluationSuite, app: QAApp
             "results": latest_run.results,
             "created_at": latest_run.created_at,
             "done_count": len(latest_run.results),
+            **summarize(latest_run.results),
             "matches_draft": latest_run.manifest_hash is not None and latest_run.manifest_hash == manifest_fingerprint(Manifest.model_validate(app.draft_manifest) if app.draft_manifest else manifest_from_qa_app(app)),
         },
     }
@@ -449,12 +470,18 @@ async def update_evaluation_set(
     suite, app = await _suite(session, suite_id, context.workspace_id, with_cases=True)
     changes = payload.model_dump(exclude_unset=True)
     changes.pop("judge", None)
+    changes.pop("scoring", None)
     # 评委配置整体替换：未传的字段取默认值（嵌套模型的 exclude_unset 会丢掉它们）
     judge = payload.judge.model_dump() if payload.judge is not None else None
     if judge is not None:
         if judge["model_id"]:
             await _judge_model(session, judge["model_id"], context.workspace_id)
-        suite.judge_config = {**judge, "rubric": judge["rubric"].strip()}
+        suite.judge_config = {**judge, "rubric": judge["rubric"].strip(), "scoring": (suite.judge_config or {}).get("scoring") or {}}
+    if payload.scoring is not None:
+        knowledge_base_id = payload.scoring.knowledge_base_id
+        if knowledge_base_id and not await session.scalar(select(KnowledgeBase.id).where(KnowledgeBase.id == knowledge_base_id, KnowledgeBase.workspace_id == context.workspace_id)):
+            raise HTTPException(status_code=422, detail="知识库不存在或不在当前业务空间")
+        suite.judge_config = {**(suite.judge_config or {}), "scoring": payload.scoring.model_dump()}
     for key, value in changes.items():
         setattr(suite, key, value.strip() if isinstance(value, str) else value)
     await session.commit()
@@ -559,12 +586,25 @@ async def _suite_judge(session: AsyncSession, suite: EvaluationSuite, workspace_
     return build_gateway(model), {"rubric": config.get("rubric") or DEFAULT_RUBRIC, "pass_score": float(config.get("pass_score") or DEFAULT_PASS_SCORE)}
 
 
+async def _suite_scoring(session: AsyncSession, suite: EvaluationSuite, manifest: Manifest, workspace_id: str) -> tuple[Manifest, SuiteScoring]:
+    """按评测集的判分设置得到本次实际运行的配置；草稿本身不变，门禁比对的仍是草稿指纹。"""
+    config = (suite.judge_config or {}).get("scoring") or {}
+    if config.get("knowledge_base_id"):
+        manifest = manifest.model_copy(update={"knowledge_base_ids": [config["knowledge_base_id"]]})
+    if config.get("retrieval_mode"):
+        tools = [item.model_copy(update={"config": {**item.config, "mode": config["retrieval_mode"]}}) if item.name == "knowledge_retrieval" else item for item in manifest.tools]
+        manifest = manifest.model_copy(update={"tools": tools})
+    knowledge_bases = list(await session.scalars(select(KnowledgeBase).where(KnowledgeBase.id.in_(manifest.knowledge_base_ids), KnowledgeBase.workspace_id == workspace_id)))
+    service = await session.get(ServiceConfig, workspace_id)
+    return manifest, SuiteScoring(knowledge_bases, config.get("retrieval_mode") or _retrieval_config(manifest)["mode"], bool(service and service.app_id == suite.app_id))
+
+
 def _normalized(value: str) -> str:
     return re.sub(r"\s+", "", value).lower()
 
 
 async def _evaluate_case(
-    session: AsyncSession, manifest: Manifest, case: EvaluationCase, workspace_id: str, judge: tuple[ModelGateway, dict[str, Any]] | None = None,
+    session: AsyncSession, manifest: Manifest, case: EvaluationCase, workspace_id: str, scoring: SuiteScoring, judge: tuple[ModelGateway, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
     try:
@@ -578,7 +618,9 @@ async def _evaluate_case(
         ]
         if len(missing_required_text) == 1:
             input_values[missing_required_text[0].key] = case.message
-        result = await execute_manifest(session, manifest, message=case.message, input_values=input_values, workspace_id=workspace_id)
+        # 客服应用带上业务工具一起评测；评测版工具只记录调用，不会真的创建售后单
+        toolset = EvalToolset(session, workspace_id) if scoring.use_tools else None
+        result = await execute_manifest(session, manifest, message=case.message, input_values=input_values, workspace_id=workspace_id, business_tools=toolset)
         content = result["content"]
         lowered = content.lower()
         missing = [item for item in case.expected_keywords if item.lower() not in lowered]
@@ -589,7 +631,16 @@ async def _evaluate_case(
             reasons.append(f"包含禁止关键词：{'、'.join(forbidden)}")
         if case.require_citations and not result["citations"]:
             reasons.append("没有引用来源")
-        has_explicit_rules = bool(case.expected_keywords or case.forbidden_keywords or case.require_citations)
+        gold = parse_gold(case.tags)
+        gold_result: dict[str, Any] = {}
+        if gold is not None:
+            ranked = await ranked_documents(session, scoring.knowledge_bases, case.message, scoring.mode) if gold.docs and scoring.knowledge_bases else None
+            scores, problems = score_case(gold, output=content, handoff=bool(result.get("handoff")), calls=toolset.calls if toolset else None, ranked=ranked)
+            reasons.extend(problems)
+            if judge is None and not scores:
+                reasons.append("没有可自动判分的项，需要配置 LLM 评委判定回答")
+            gold_result = {"scores": scores, "answer_unscored": judge is None and needs_answer_judge(gold)}
+        has_explicit_rules = bool(case.expected_keywords or case.forbidden_keywords or case.require_citations or gold is not None)
         # 配了评委时，标准答案交给评委对照语义判断，不再要求逐字一致
         if judge is None and case.case_type != "good" and case.expected_output and not has_explicit_rules and _normalized(content) != _normalized(case.expected_output):
             reasons.append("输出与标准答案不一致")
@@ -604,7 +655,7 @@ async def _evaluate_case(
             except ValueError as exc:
                 verdict = {"judge_score": None, "judge_reason": str(exc)}
                 reasons.append(str(exc))
-        return {"case_id": case.id, "name": case.name, "passed": not reasons, "reasons": reasons, "output": content, "simulated": result["simulated"], **verdict}
+        return {"case_id": case.id, "name": case.name, "passed": not reasons, "reasons": reasons, "output": content, "simulated": result["simulated"], **verdict, **gold_result}
     except Exception as exc:
         return {"case_id": case.id, "name": case.name, "passed": False, "reasons": [str(exc)], "output": "", "simulated": False}
 
@@ -627,6 +678,7 @@ def _run_payload(run: EvaluationRun, total: int) -> dict[str, Any]:
     return {
         "id": run.id, "status": run.status, "passed_count": run.passed_count, "failed_count": run.failed_count, "results": run.results,
         "simulated": run.simulated, "created_at": run.created_at, "matches_draft": True, "total_count": total, "done_count": len(run.results),
+        **summarize(run.results),
     }
 
 
@@ -649,7 +701,8 @@ async def run_evaluation_set(
     manifest = _draft_manifest(app)
     run = EvaluationRun(suite_id=suite.id, status=RunStatus.RUNNING, manifest_hash=manifest_fingerprint(manifest))
     judge = await _suite_judge(session, suite, context.workspace_id)
-    results = [await _evaluate_case(session, manifest, case, context.workspace_id, judge) for case in ready_cases]
+    effective, scoring = await _suite_scoring(session, suite, manifest, context.workspace_id)
+    results = [await _evaluate_case(session, effective, case, context.workspace_id, scoring, judge) for case in ready_cases]
     run.results = results
     run.simulated = any(item["simulated"] for item in results)
     session.add(run)
@@ -693,7 +746,8 @@ async def step_evaluation_run(
     done = {item["case_id"] for item in run.results}
     remaining = [case for case in ready_cases if case.id not in done]
     if remaining:
-        result = await _evaluate_case(session, manifest, remaining[0], context.workspace_id, await _suite_judge(session, suite, context.workspace_id))
+        effective, scoring = await _suite_scoring(session, suite, manifest, context.workspace_id)
+        result = await _evaluate_case(session, effective, remaining[0], context.workspace_id, scoring, await _suite_judge(session, suite, context.workspace_id))
         run.results = [*run.results, result]  # 重新赋值，确保 JSON 列被标记为已修改
         run.simulated = run.simulated or result["simulated"]
         run.passed_count = sum(item["passed"] for item in run.results)
