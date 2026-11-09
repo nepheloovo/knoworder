@@ -20,7 +20,7 @@ from .models import DEFAULT_WORKSPACE_ID, ApiClient, AuthSession, Membership, Us
 from .tenancy import activate_workspace
 
 
-DemoRole = Literal["admin", "manager", "user"]
+DemoRole = Literal["admin", "manager", "user", "cs_agent", "warehouse"]
 
 
 @dataclass(slots=True)
@@ -42,6 +42,8 @@ def _required_scope(request: Request) -> str | None:
     method = request.method.upper()
     if "/auth/" in path:
         return None
+    if "/commerce" in path:
+        return "commerce:read" if method == "GET" else "commerce:write"
     if "/knowledge-bases" in path:
         return "knowledge:read" if method == "GET" else "knowledge:write"
     if "/models" in path or "/model-options" in path:

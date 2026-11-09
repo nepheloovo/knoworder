@@ -580,7 +580,7 @@ def _channel(context: AuthContext, requested: str) -> str:
     return {"run": "web", "preview": "debug", "share": "share"}.get(requested, requested)
 
 
-async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, payload: RunRequest, context: AuthContext, session: AsyncSession, *, channel: str = "run") -> dict[str, Any]:
+async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, payload: RunRequest, context: AuthContext, session: AsyncSession, *, channel: str = "run", business_tools: Any = None) -> dict[str, Any]:
     history: list[Message] = []
     conversation: Conversation | None = None
     if payload.conversation_id:
@@ -619,6 +619,7 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
             spans=spans,
             flow_resume=(paused.flow_state, payload.resume.values) if paused is not None and paused.flow_state and payload.resume else None,
             interactive=True,
+            business_tools=business_tools,
         )
     except Exception as exc:
         # 失败运行同样进入可观测：保留已完成的步骤和错误原因。
@@ -652,7 +653,7 @@ async def _execute(app: QAApp, manifest: Manifest, version_id: str | None, paylo
         await session.delete(awaiting_confirmation)
         session.add(assistant_message)
     else:
-        user_message = Message(conversation_id=conversation.id, role="user", content=str(query), input_values=payload.resume.values if payload.resume else payload.input_values, app_version_id=version_id)
+        user_message = Message(conversation_id=conversation.id, role="user", content=str(query), input_values=payload.resume.values if payload.resume else payload.input_values, app_version_id=version_id, created_at=started_at)
         session.add_all([user_message, assistant_message])
     await session.flush()
     model_info = result.get("model") or {}

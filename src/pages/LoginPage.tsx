@@ -13,7 +13,7 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const from = (location.state as { from?: string } | null)?.from ?? '/workbench';
+  const from = (location.state as { from?: string } | null)?.from ?? '/commerce';
 
   if (me) return <Navigate to={from} replace />;
 

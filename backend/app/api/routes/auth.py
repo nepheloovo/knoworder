@@ -34,7 +34,7 @@ class UserCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     display_name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=8, max_length=256)
-    role: Literal["admin", "manager", "user"] = "user"
+    role: Literal["admin", "manager", "user", "cs_agent", "warehouse"] = "user"
 
 
 class WorkspaceCreate(BaseModel):
@@ -62,7 +62,7 @@ class ApiClientCreate(BaseModel):
 
 
 class MembershipUpdate(BaseModel):
-    role: Literal["admin", "manager", "user"]
+    role: Literal["admin", "manager", "user", "cs_agent", "warehouse"]
 
 
 def user_payload(user: User, memberships: list[Membership]) -> dict:
