@@ -80,6 +80,7 @@ async def _agent_answer(
     spans: list[dict[str, Any]] | None = None,
     knowledge_search: Callable[[str], Awaitable[str]] | None = None,
     state: dict[str, Any] | None = None,
+    business_tools: Any = None,
 ) -> tuple[str, dict[str, int | None], list[dict[str, Any]]]:
     state = state if state is not None else {}
     references = [item for item in manifest.tools if item.enabled and item.tool_id]
@@ -135,6 +136,27 @@ async def _agent_answer(
             coroutine=handoff,
         ))
         tool_kinds[HANDOFF_TOOL] = "handoff"
+
+    if business_tools is not None:
+        # 业务工具由服务端绑定当前买家，模型只能传订单号等业务参数
+        for label, tool in business_tools.structured_tools():
+            tools.append(tool)
+            tool_kinds[tool.name] = "tool"
+            tool_labels[tool.name] = label
+
+    if gateway.is_simulated and business_tools is not None:
+        # 没有接真实模型时按规则识别意图，同样调用真实业务数据
+        reply = await business_tools.scripted_reply(query, context)
+        steps_taken: list[dict[str, Any]] = []
+        for number, call in enumerate(reply.calls, start=1):
+            _span(spans, "tool", f"工具 · {call.label}", detail=call.result[:2000], tool=call.name, label=call.label, arguments=call.arguments, step=number)
+            steps_taken.append({"step": number, "tool": call.name, "label": call.label, "kind": "tool", "arguments": call.arguments, "status": "success", "result": call.result[:4000], "duration_ms": 0})
+        if reply.handoff and manifest.guardrails.human_handoff:
+            state["handoff"] = True
+            state["handoff_reason"] = reply.handoff_reason
+        state["keep_citations"] = reply.used_knowledge
+        _span(spans, "model", "规则回复", detail=reply.answer[:2000], simulated=True)
+        return reply.answer, {"input": None, "output": None, "total": None}, steps_taken
 
     model = gateway.chat_model(temperature=manifest.model.temperature, max_tokens=manifest.model.max_tokens)
     if not tools or gateway.is_simulated:
@@ -409,6 +431,7 @@ async def execute_manifest(
     spans: list[dict[str, Any]] | None = None,
     flow_resume: tuple[dict[str, Any], dict[str, Any]] | None = None,
     interactive: bool = False,
+    business_tools: Any = None,
 ) -> dict[str, Any]:
     started = monotonic()
     manifest = manifest if isinstance(manifest, Manifest) else Manifest.model_validate(manifest)
@@ -576,7 +599,10 @@ async def execute_manifest(
             spans=spans,
             knowledge_search=knowledge_search,
             state=agent_state,
+            business_tools=business_tools,
         )
+        if agent_state.get("keep_citations") is False:
+            citations.clear()
         usage = {
             "input_tokens": agent_usage.get("input"),
             "output_tokens": agent_usage.get("output"),
@@ -657,6 +683,7 @@ async def execute_manifest(
         "simulated": bool(gateway.is_simulated) or retrieval_state["simulated"],
         "output_json": output_json,
         "handoff": handoff,
+        "handoff_reason": str(agent_state.get("handoff_reason") or ""),
         "agent_steps": agent_steps,
         "model": model_info,
     }

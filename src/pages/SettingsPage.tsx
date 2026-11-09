@@ -11,7 +11,7 @@ type AuditEvent = { id: string; actor_name: string; action: string; resource_typ
 type Member = { id: string; email: string; display_name: string; is_active: boolean; role: Role; joined_at: string };
 type ApiClientItem = { id: string; name: string; role: 'admin' | 'manager'; scopes: string[]; last_used_at: string | null };
 
-const ROLE_LABEL: Record<Role, string> = { admin: '管理员', manager: '应用管理员', user: '业务使用者' };
+const ROLE_LABEL: Record<Role, string> = { admin: '管理员', manager: '应用管理员', user: '业务使用者', cs_agent: '客服', warehouse: '仓管' };
 const SCOPES: Array<[string, string]> = [
   ['apps:run', '运行应用'], ['apps:read', '读取应用'], ['apps:write', '修改应用'], ['apps:evaluate', '运行评测'],
   ['knowledge:read', '读取知识库'], ['knowledge:write', '写入知识库'], ['models:read', '读取模型'], ['tools:read', '读取工具'], ['tools:write', '修改工具'], ['logs:read', '读取日志'],
@@ -234,10 +234,12 @@ const ROLE_DESC: Record<Role, string> = {
   admin: '业务空间的全部权限，包括模型密钥、成员和审计。',
   manager: '负责应用交付：搭建应用、维护知识库、跑评测和看运营数据。',
   user: '业务人员：只能使用已发布的应用。',
+  cs_agent: '使用客服工作台，处理买家会话、订单和售后。',
+  warehouse: '处理入库、出库、库存和退货收货。',
 };
 
 function RolesView() {
-  const roles: Role[] = ['admin', 'manager', 'user'];
+  const roles: Role[] = ['admin', 'manager', 'user', 'cs_agent', 'warehouse'];
   return (
     <div className="col" style={{ gap: 16 }}>
       <div className="grid c3">

@@ -17,6 +17,16 @@ import { SettingsPage } from './pages/SettingsPage';
 import { SharePage } from './pages/SharePage';
 import { ToolsPage } from './pages/ToolsPage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
+import { AfterSalesPage } from './pages/commerce/AfterSalesPage';
+import { BuyerPage } from './pages/commerce/BuyerPage';
+import { InboundPage } from './pages/commerce/InboundPage';
+import { InventoryPage } from './pages/commerce/InventoryPage';
+import { OrdersPage } from './pages/commerce/OrdersPage';
+import { OutboundPage } from './pages/commerce/OutboundPage';
+import { OverviewPage } from './pages/commerce/OverviewPage';
+import { ProductsPage } from './pages/commerce/ProductsPage';
+import { ServiceDeskPage } from './pages/commerce/ServiceDeskPage';
+import { WarehousesPage } from './pages/commerce/WarehousesPage';
 
 function Protected({ children }: PropsWithChildren) {
   const { me, loading } = useAuth();
@@ -32,6 +42,16 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/share/:token" element={<SharePage />} />
+      <Route path="/commerce" element={<Protected><OverviewPage /></Protected>} />
+      <Route path="/service" element={<Protected><ServiceDeskPage /></Protected>} />
+      <Route path="/service/buyer" element={<Protected><BuyerPage /></Protected>} />
+      <Route path="/orders" element={<Protected><OrdersPage /></Protected>} />
+      <Route path="/products" element={<Protected><ProductsPage /></Protected>} />
+      <Route path="/after-sales" element={<Protected><AfterSalesPage /></Protected>} />
+      <Route path="/inventory" element={<Protected><InventoryPage /></Protected>} />
+      <Route path="/inbound" element={<Protected><InboundPage /></Protected>} />
+      <Route path="/outbound" element={<Protected><OutboundPage /></Protected>} />
+      <Route path="/warehouses" element={<Protected><WarehousesPage /></Protected>} />
       <Route path="/workbench" element={<Protected><WorkbenchPage /></Protected>} />
       <Route path="/chat/:appId" element={<Protected><ChatRunPage /></Protected>} />
       <Route path="/apps" element={<Protected><AppsPage /></Protected>} />
@@ -44,7 +64,7 @@ export default function App() {
       <Route path="/evaluation-sets" element={<Protected><EvaluationSetsPage /></Protected>} />
       <Route path="/tools" element={<Protected><ToolsPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
-      <Route path="*" element={<Navigate to="/workbench" replace />} />
+      <Route path="*" element={<Navigate to="/commerce" replace />} />
     </Routes>
   );
 }

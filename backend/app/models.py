@@ -477,3 +477,257 @@ class AuditEvent(Base):
     detail: Mapped[dict[str, Any]] = mapped_column(SAJSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
+
+
+# ---------- 电商基础数据 ----------
+# 金额一律以「分」存整数，避免浮点误差；接口层换算成元。
+
+
+class Shop(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "shops"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    platform: Mapped[str] = mapped_column(String(32), default="web", nullable=False)
+
+
+class Customer(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "customers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    phone: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    level: Mapped[str] = mapped_column(String(24), default="普通会员", nullable=False)
+    address: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+
+
+class Product(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "products"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    name: Mapped[str] = mapped_column(String(180), nullable=False)
+    category: Mapped[str] = mapped_column(String(80), default="", nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    skus: Mapped[list[Sku]] = relationship(back_populates="product", cascade="all, delete-orphan")
+
+
+class Sku(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "skus"
+    __table_args__ = (UniqueConstraint("workspace_id", "code", name="uq_sku_workspace_code"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    spec: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    price_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    low_stock_threshold: Mapped[int] = mapped_column(Integer, default=10, nullable=False)
+    product: Mapped[Product] = relationship(back_populates="skus")
+
+
+class Warehouse(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "warehouses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    address: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    locations: Mapped[list[Location]] = relationship(back_populates="warehouse", cascade="all, delete-orphan")
+
+
+class Location(Base, TimestampMixin):
+    __tablename__ = "warehouse_locations"
+    __table_args__ = (UniqueConstraint("warehouse_id", "code", name="uq_location_warehouse_code"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    zone: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    # storage 可售货位；damaged 残次区（其中的库存不参与分配）
+    kind: Mapped[str] = mapped_column(String(16), default="storage", nullable=False)
+    warehouse: Mapped[Warehouse] = relationship(back_populates="locations")
+
+
+class InventoryBalance(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "inventory_balances"
+    __table_args__ = (UniqueConstraint("sku_id", "location_id", name="uq_inventory_sku_location"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    sku_id: Mapped[str] = mapped_column(ForeignKey("skus.id", ondelete="CASCADE"), nullable=False, index=True)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id: Mapped[str] = mapped_column(ForeignKey("warehouse_locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    on_hand: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    damaged: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class InventoryMove(Base, WorkspaceMixin):
+    """库存流水：只追加不修改，每次库存变化都有一条。"""
+
+    __tablename__ = "inventory_moves"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    sku_id: Mapped[str] = mapped_column(ForeignKey("skus.id", ondelete="CASCADE"), nullable=False, index=True)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False, index=True)
+    location_id: Mapped[str] = mapped_column(ForeignKey("warehouse_locations.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    on_hand_delta: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    locked_delta: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    damaged_delta: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    on_hand_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    ref_no: Mapped[str] = mapped_column(String(40), default="", nullable=False)
+    note: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    actor_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+
+class SalesOrder(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "sales_orders"
+    __table_args__ = (UniqueConstraint("workspace_id", "order_no", name="uq_order_workspace_no"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    order_no: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    shop_id: Mapped[str] = mapped_column(ForeignKey("shops.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id", ondelete="SET NULL"), nullable=True)
+    # paid 待发货 / picking 拣货中 / shipped 已发货 / delivered 已签收 / refunded 已退款 / cancelled 已取消
+    status: Mapped[str] = mapped_column(String(16), default="paid", nullable=False, index=True)
+    total_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    refunded_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    address: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    note: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    items: Mapped[list[OrderItem]] = relationship(back_populates="order", cascade="all, delete-orphan")
+    shop: Mapped[Shop] = relationship()
+    customer: Mapped[Customer] = relationship()
+    shipment: Mapped[Shipment | None] = relationship(back_populates="order", cascade="all, delete-orphan", uselist=False)
+
+
+class OrderItem(Base):
+    __tablename__ = "sales_order_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    order_id: Mapped[str] = mapped_column(ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku_id: Mapped[str] = mapped_column(ForeignKey("skus.id", ondelete="CASCADE"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    order: Mapped[SalesOrder] = relationship(back_populates="items")
+    sku: Mapped[Sku] = relationship()
+
+
+class Shipment(Base, TimestampMixin):
+    __tablename__ = "shipments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    order_id: Mapped[str] = mapped_column(ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False, unique=True)
+    carrier: Mapped[str] = mapped_column(String(40), nullable=False)
+    tracking_no: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="in_transit", nullable=False)
+    events: Mapped[list[dict[str, Any]]] = mapped_column(SAJSON, default=list, nullable=False)
+    order: Mapped[SalesOrder] = relationship(back_populates="shipment")
+
+
+class AfterSale(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "after_sales"
+    __table_args__ = (UniqueConstraint("workspace_id", "after_sale_no", name="uq_after_sale_workspace_no"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    after_sale_no: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # refund / return / exchange
+    # requested 待审核 / approved 待寄回 / returning 退回中 / completed 已完成 / rejected 已驳回
+    status: Mapped[str] = mapped_column(String(16), default="requested", nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    amount_cents: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    source: Mapped[str] = mapped_column(String(16), default="manual", nullable=False)  # ai / agent / manual
+    result_note: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    order: Mapped[SalesOrder] = relationship()
+    customer: Mapped[Customer] = relationship()
+
+
+class InboundOrder(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "inbound_orders"
+    __table_args__ = (UniqueConstraint("workspace_id", "inbound_no", name="uq_inbound_workspace_no"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    inbound_no: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False, index=True)
+    supplier: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)  # pending / received / completed
+    note: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+    warehouse: Mapped[Warehouse] = relationship()
+    lines: Mapped[list[InboundLine]] = relationship(back_populates="inbound", cascade="all, delete-orphan")
+
+
+class InboundLine(Base):
+    __tablename__ = "inbound_lines"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    inbound_id: Mapped[str] = mapped_column(ForeignKey("inbound_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku_id: Mapped[str] = mapped_column(ForeignKey("skus.id", ondelete="CASCADE"), nullable=False)
+    expected: Mapped[int] = mapped_column(Integer, nullable=False)
+    received: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    location_id: Mapped[str | None] = mapped_column(ForeignKey("warehouse_locations.id", ondelete="SET NULL"), nullable=True)
+    inbound: Mapped[InboundOrder] = relationship(back_populates="lines")
+    sku: Mapped[Sku] = relationship()
+    location: Mapped[Location | None] = relationship()
+
+
+class OutboundOrder(Base, TimestampMixin, WorkspaceMixin):
+    __tablename__ = "outbound_orders"
+    __table_args__ = (UniqueConstraint("workspace_id", "outbound_no", name="uq_outbound_workspace_no"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    outbound_no: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    order_id: Mapped[str] = mapped_column(ForeignKey("sales_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False, index=True)  # pending / picked / checked / shipped / cancelled
+    order: Mapped[SalesOrder] = relationship()
+    warehouse: Mapped[Warehouse] = relationship()
+    lines: Mapped[list[OutboundLine]] = relationship(back_populates="outbound", cascade="all, delete-orphan")
+
+
+class OutboundLine(Base):
+    __tablename__ = "outbound_lines"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    outbound_id: Mapped[str] = mapped_column(ForeignKey("outbound_orders.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku_id: Mapped[str] = mapped_column(ForeignKey("skus.id", ondelete="CASCADE"), nullable=False)
+    location_id: Mapped[str] = mapped_column(ForeignKey("warehouse_locations.id", ondelete="CASCADE"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    outbound: Mapped[OutboundOrder] = relationship(back_populates="lines")
+    sku: Mapped[Sku] = relationship()
+    location: Mapped[Location] = relationship()
+
+
+class ServiceConfig(Base, TimestampMixin):
+    """业务空间使用哪个已发布应用作为买家侧的智能客服。"""
+
+    __tablename__ = "service_configs"
+
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), primary_key=True)
+    app_id: Mapped[str] = mapped_column(ForeignKey("qa_apps.id", ondelete="CASCADE"), nullable=False)
+
+
+class ServiceSession(Base, TimestampMixin, WorkspaceMixin):
+    """一段买家会话。买家身份绑在这里，由服务端传给客服工具，不经过模型。"""
+
+    __tablename__ = "service_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, unique=True)
+    # ai 机器人接待 / queued 排队待接入 / serving 人工接待中 / closed 已结束
+    status: Mapped[str] = mapped_column(String(16), default="ai", nullable=False, index=True)
+    was_handed_off: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    assignee_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    assignee_name: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    handoff_reason: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+    summary: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    customer: Mapped[Customer] = relationship()
+    conversation: Mapped[Conversation] = relationship()
